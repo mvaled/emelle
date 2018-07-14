@@ -3,7 +3,7 @@ module Symboltbl = Hashtbl.Make(Ident)
 type 'a t =
   | Ann of {annot : 'a; term: 'a t}
   | App of 'a t * 'a t
-  | Case of 'a t * Pattern.decision_tree * 'a t array
+  | Case of 'a t list * Pattern.decision_tree * 'a t array
   | Lam of Ident.t * 'a t
   | Let of 'a bind_group * 'a t
   | Let_rec of 'a bind_group list * 'a t

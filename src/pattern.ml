@@ -73,7 +73,6 @@ let specialize
 
 (** Construct the default matrix *)
 let default_matrix
-      (constr : Ident.t)
       (rows : row list)
     : matrix =
   let helper rows row =
@@ -81,8 +80,8 @@ let default_matrix
     | [] -> rows
     | second_pat::pats ->
        match row.first_pattern with
-       | Con(_, id, _) when Ident.equal id constr -> rows
-       | Con _ | Wild ->
+       | Con _ -> rows
+       | Wild ->
           ({ row with first_pattern = second_pat; rest_patterns = pats }::rows)
   in List.fold_left helper [] rows
 
@@ -101,12 +100,13 @@ let rec decision_tree_of_matrix env = function
              | Some (Alias ty) -> handle_type ty
              | Some (Algebraic alg) ->
                 let jump_tbl = Ident.Tbl.create 0 in
+                let default = default_matrix rows in
                 let result =
                   Ident.Tbl.fold (fun id (prods, _) acc ->
                       if acc then
                         let matrix =
                           match specialize id (Array.length prods) rows with
-                          | [] -> default_matrix id rows
+                          | [] -> default
                           | matrix -> matrix
                         in
                         match decision_tree_of_matrix env matrix with
