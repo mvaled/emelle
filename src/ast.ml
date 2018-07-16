@@ -7,8 +7,8 @@ and 'a pattern' =
 type 'a expr = 'a * 'a expr'
 and 'a expr' =
   | App of 'a expr * 'a expr
-  | Case of 'a expr
-  | Lam of 'a expr
+  | Case of 'a expr * ('a pattern * 'a expr) list
+  | Lam of 'a pattern * 'a expr
   | Let of 'a expr
   | Let_rec of 'a expr
   | Var of Ident.t
@@ -28,3 +28,5 @@ let rec pattern_of_ast_pattern (_, node) =
      Pattern.Con(typename, con, List.map pattern_of_ast_pattern pats)
   | Var _ -> Pattern.Wild
   | Wild -> Pattern.Wild
+
+let undefined = failwith ""

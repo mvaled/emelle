@@ -1,0 +1,3 @@
+[submodule "yasle"]
+	path = yasle
+	url = https://gitlab.com/TheAspiringHacker/yasle

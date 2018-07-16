@@ -36,10 +36,11 @@ let swap_column_of_row (idx : int) (row : row) =
 
 (** Column-swapping operation for matrices *)
 let swap_column idx =
-  let open Util in
+  let map = Yasle.Option.map in
+  let bind = Yasle.Option.bind in
   List.fold_left (fun acc next ->
-      Option.bind acc (fun rows ->
-          Option.map (fun row -> row::rows) (swap_column_of_row idx next)
+      bind acc (fun rows ->
+          map (fun row -> row::rows) (swap_column_of_row idx next)
         )
     ) (Some [])
 
