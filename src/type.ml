@@ -21,6 +21,10 @@ type algebraic = (t array * int) Ident.Tbl.t
 
 type def = Alias of t | Algebraic of algebraic
 
+type error = Unification_fail of t * t
+
+module Result = Yasle.Result.Make(struct type t = error end)
+
 type checker = {
     mutable vargen : int
   }
@@ -50,28 +54,31 @@ let rec occurs (uvar : unassigned_var) = function
 
 (** Unify two types, collecting errors in the err parameter  *)
 let rec unify errs lhs rhs =
+  let open Yasle in
   if lhs != rhs then
-  match lhs, rhs with
-  | App(lcon, larg), App(rcon, rarg) ->
-     unify errs lcon rcon;
-     unify errs larg rarg
-  | Nominal lstr   , Nominal rstr when lstr = rstr -> ()
-  | Prim lprim     , Prim rprim   when lprim = rprim -> ()
-  | ((Var v, ty)   | (ty, Var v)) as pair ->
-     begin match !v with
-     | Unassigned uvar ->
-        begin match ty with
-        (* A variable occurring in itself is not an error *)
-        | Var {contents = Unassigned uvar2} when uvar.id = uvar2.id -> ()
-        | _ ->
-           if occurs uvar ty then
-             Queue.add pair errs
-           else
-             ()
-        end
-     | Assigned t -> unify errs t ty
-     end
-  | pair -> Queue.add pair errs
+    Difflist.empty
+  else
+    match lhs, rhs with
+    | App(lcon, larg), App(rcon, rarg) ->
+       Difflist.combine (unify errs lcon rcon) (unify errs larg rarg)
+    | Nominal lstr   , Nominal rstr when lstr = rstr -> Difflist.empty
+    | Prim lprim     , Prim rprim   when lprim = rprim -> Difflist.empty
+    | (Var v, ty)    | (ty, Var v) ->
+       begin match !v with
+       | Unassigned uvar ->
+          begin match ty with
+          (* A variable occurring in itself is not an error *)
+          | Var {contents = Unassigned uvar2} when uvar.id = uvar2.id ->
+             Difflist.empty
+          | _ ->
+             if occurs uvar ty then
+               Difflist.singleton (Unification_fail(lhs, rhs))
+             else
+               Difflist.of_list []
+          end
+       | Assigned t -> unify errs t ty
+       end
+    | _ -> Difflist.singleton (Unification_fail(lhs, rhs))
 
 (** Instantiate a type scheme by replacing type variables whose levels are
     greater than or equal to target_level with type variables of level
