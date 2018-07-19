@@ -52,15 +52,15 @@ let rec occurs (uvar : unassigned_var) = function
           false
         )
 
-(** Unify two types, collecting errors in the err parameter  *)
-let rec unify errs lhs rhs =
+(** Unify two types, returning the unification errors *)
+let rec unify lhs rhs =
   let open Yasle in
   if lhs != rhs then
     Difflist.empty
   else
     match lhs, rhs with
     | App(lcon, larg), App(rcon, rarg) ->
-       Difflist.combine (unify errs lcon rcon) (unify errs larg rarg)
+       Difflist.combine (unify lcon rcon) (unify larg rarg)
     | Nominal lstr   , Nominal rstr when lstr = rstr -> Difflist.empty
     | Prim lprim     , Prim rprim   when lprim = rprim -> Difflist.empty
     | (Var v, ty)    | (ty, Var v) ->
@@ -76,7 +76,7 @@ let rec unify errs lhs rhs =
              else
                Difflist.of_list []
           end
-       | Assigned t -> unify errs t ty
+       | Assigned t -> unify t ty
        end
     | _ -> Difflist.singleton (Unification_fail(lhs, rhs))
 

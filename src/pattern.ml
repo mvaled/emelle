@@ -52,8 +52,7 @@ let find_type ty =
     in f 0 ty
 
 (** Specialize operation as described in Compiling Pattern Matching to Good
-    Decision Trees
- *)
+    Decision Trees *)
 let specialize
       (constr : Ident.t)
       (count  : int)
