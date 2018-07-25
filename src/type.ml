@@ -80,8 +80,10 @@ let rec unify lhs rhs =
           | _ ->
              if occurs uvar ty then
                Sequence.return (Unification_fail(lhs, rhs))
-             else
+             else (
+               v := Assigned ty;
                Sequence.empty
+             )
           end
        | Assigned t -> unify t ty
        end
