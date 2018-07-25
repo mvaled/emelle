@@ -1,3 +1,5 @@
+open Base
+
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =
   | Con of Ident.t * Ident.t * 'a pattern list
@@ -25,7 +27,7 @@ let fresh_id st =
 let rec pattern_of_ast_pattern (_, node) =
   match node with
   | Con(typename, con, pats) ->
-     Pattern.Con(typename, con, List.map pattern_of_ast_pattern pats)
+     Pattern.Con(typename, con, List.map ~f:pattern_of_ast_pattern pats)
   | Var _ -> Pattern.Wild
   | Wild -> Pattern.Wild
 

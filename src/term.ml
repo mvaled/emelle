@@ -1,4 +1,4 @@
-module Symboltbl = Hashtbl.Make(Ident)
+open Base
 
 type 'a t =
   | Ann of {ann : 'a; term: 'a t}

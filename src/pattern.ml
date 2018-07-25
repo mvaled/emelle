@@ -1,3 +1,5 @@
+open Base
+
 type t =
   | Con of Ident.t * Ident.t * t list (** Constructor pattern *)
   | Wild (** Wildcard pattern *)
@@ -36,13 +38,13 @@ let swap_column_of_row (idx : int) (row : row) =
 
 (** Column-swapping operation for matrices *)
 let swap_column idx =
-  let map = Yasle.Option.map in
-  let bind = Yasle.Option.bind in
-  List.fold_left (fun acc next ->
-      bind acc (fun rows ->
-          map (fun row -> row::rows) (swap_column_of_row idx next)
+  let map = Option.map in
+  let bind = Option.bind in
+  List.fold ~f:(fun acc next ->
+      bind acc ~f:(fun rows ->
+          map ~f:(fun row -> row::rows) (swap_column_of_row idx next)
         )
-    ) (Some [])
+    ) ~init:(Some [])
 
 let find_type ty =
     let rec f i = function
@@ -69,7 +71,7 @@ let specialize
     | Con _ -> rows
     | Wild ->
        { row with rest_patterns = (ana Wild count)@row.rest_patterns }::rows
-  in List.fold_left helper [] rows
+  in List.fold ~f:helper ~init:[] rows
 
 (** Construct the default matrix *)
 let default_matrix
@@ -83,7 +85,7 @@ let default_matrix
        | Con _ -> rows
        | Wild ->
           ({ row with first_pattern = second_pat; rest_patterns = pats }::rows)
-  in List.fold_left helper [] rows
+  in List.fold ~f:helper ~init:[] rows
 
 (** Compilation scheme CC *)
 let rec decision_tree_of_matrix env = function

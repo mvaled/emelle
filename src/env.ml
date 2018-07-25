@@ -1,3 +1,5 @@
+open Base
+
 type t = {
     type_table : Type.def Ident.Tbl.t;
     term_table : Type.t Ident.Tbl.t;
