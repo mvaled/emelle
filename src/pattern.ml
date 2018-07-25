@@ -7,7 +7,7 @@ type t =
 type decision_tree =
   | Fail
   | Leaf of int
-  | Switch of decision_tree Ident.Tbl.t
+  | Switch of (Ident.t, decision_tree) Hashtbl.t
   | Swap of int * decision_tree
 
 type row = {
@@ -101,10 +101,10 @@ let rec decision_tree_of_matrix env = function
              | None -> None
              | Some (Alias ty) -> handle_type ty
              | Some (Algebraic alg) ->
-                let jump_tbl = Ident.Tbl.create 0 in
+                let jump_tbl = Hashtbl.create (module Ident) in
                 let default = default_matrix rows in
                 let result =
-                  Ident.Tbl.fold (fun id (prods, _) acc ->
+                  Hashtbl.fold ~f:(fun ~key:id ~data:(prods, _) acc ->
                       if acc then
                         let matrix =
                           match specialize id (Array.length prods) rows with
@@ -112,10 +112,12 @@ let rec decision_tree_of_matrix env = function
                           | matrix -> matrix
                         in
                         match decision_tree_of_matrix env matrix with
-                        | Some tree -> Ident.Tbl.add jump_tbl id tree; true
+                        | Some tree ->
+                           Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
+                           true
                         | None -> false
                       else
-                        false) alg true
+                        false) alg ~init:true
                 in
                 if result then
                   if i = 0 then

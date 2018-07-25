@@ -20,24 +20,4 @@ let equal lhs rhs = (compare lhs rhs) = 0
 (* Rewrite this later *)
 let hash ty = Hashtbl.hash ty
 
-type u = t
-
-(** DEPRECATED compatibility module to stdlib Hashtbl module
-    TODO: Switch to Jane Street's Hashtbl intf *)
-module Tbl = struct
-  type nonrec 'a t = (t, 'a) Hashtbl.t
-  let create n =
-    let module M = struct
-        type t = u
-        let hash = hash
-        let compare = compare
-        let sexp_of_t = failwith "Not supported"
-      end
-    in
-    Hashtbl.create (module M) ~growth_allowed:true ~size:n
-  let find_opt = Hashtbl.find
-  let mem = Hashtbl.mem
-  let add tbl key data = Hashtbl.add_exn tbl ~key:key ~data:data
-  let fold f tbl init =
-    Hashtbl.fold ~f:(fun ~key ~data acc -> f key data acc ) ~init:init tbl
-end
+let sexp_of_t = failwith "Not supported"

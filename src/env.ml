@@ -1,13 +1,13 @@
 open Base
 
 type t = {
-    type_table : Type.def Ident.Tbl.t;
-    term_table : Type.t Ident.Tbl.t;
+    type_table : (Ident.t, Type.def) Hashtbl.t;
+    term_table : (Ident.t, Type.t) Hashtbl.t;
     parent : t option
   }
 
 let rec find_type id env =
-  match Ident.Tbl.find_opt env.type_table id with
+  match Hashtbl.find env.type_table id with
   | Some def -> Some def
   | None ->
      match env.parent with
@@ -15,7 +15,7 @@ let rec find_type id env =
      | None -> None
 
 let rec find_term id env =
-  match Ident.Tbl.find_opt env.term_table id with
+  match Hashtbl.find env.term_table id with
   | Some ty -> Some ty
   | None ->
      match env.parent with
@@ -23,17 +23,17 @@ let rec find_term id env =
      | None -> None
 
 let define_type env id def =
-  if Ident.Tbl.mem env.type_table id then
+  if Hashtbl.mem env.type_table id then
     false
   else (
-    Ident.Tbl.add env.type_table id def;
+    Hashtbl.add_exn env.type_table ~key:id ~data:def;
     true
   )
 
 let define_term env id def =
-  if Ident.Tbl.mem env.term_table id then
+  if Hashtbl.mem env.term_table id then
     false
   else (
-    Ident.Tbl.add env.term_table id def;
+    Hashtbl.add_exn env.term_table ~key:id ~data:def;
     true
   )

@@ -19,7 +19,7 @@ and var =
   | Unassigned of unassigned_var
   | Assigned of t
 
-type algebraic = (t array * int) Ident.Tbl.t
+type algebraic = (Ident.t, (t array * int)) Hashtbl.t
 
 type def = Alias of t | Algebraic of algebraic
 
