@@ -1,6 +1,7 @@
 open Base
 
 type prim =
+  | Arrow
   | Int
   | Float
 
@@ -25,20 +26,11 @@ type def = Alias of t | Algebraic of algebraic
 
 type error = Unification_fail of t * t
 
-type checker = {
-    mutable vargen : int
-  }
-
 let compare_prim l r =
   match l, r with
   | Int, Float -> -1
   | Float, Int -> 1
   | _ -> 0
-
-let fresh_utvar checker level =
-  let old = checker.vargen in
-  checker.vargen <- old + 1;
-  { id = old; level = level }
 
 let rec occurs (uvar : unassigned_var) = function
   | App(tcon, targ) -> occurs uvar tcon && occurs uvar targ
@@ -89,24 +81,7 @@ let rec unify lhs rhs =
        end
     | _ -> Sequence.return (Unification_fail(lhs, rhs))
 
-(** Instantiate a type scheme by replacing type variables whose levels are
-    greater than or equal to target_level with type variables of level
-    new_level *)
-let inst checker target_level new_level =
-  let map = Hashtbl.create (module Int) in
-  let rec helper = function
-    | App(tcon, targ) -> App(helper tcon, helper targ)
-    | Var { contents = Assigned ty } -> helper ty
-    | (Var { contents = Unassigned uvar }) as var ->
-       if uvar.level < target_level then
-         var
-       else
-         begin match Hashtbl.find map uvar.id with
-         | Some uvar2 -> Var (ref (Unassigned uvar2))
-         | None ->
-            let uvar2 = fresh_utvar checker new_level in
-            Hashtbl.add_exn map ~key:uvar.id ~data:uvar2;
-            Var (ref (Unassigned uvar2))
-         end
-    | ty -> ty
-  in helper
+let unify_many ty =
+  List.fold
+    ~f:(fun acc next -> Sequence.append acc (unify ty next))
+    ~init:Sequence.empty

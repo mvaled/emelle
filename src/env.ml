@@ -6,6 +6,12 @@ type t = {
     parent : t option
   }
 
+let extend parent = {
+    type_table = Hashtbl.create (module Ident);
+    term_table = Hashtbl.create (module Ident);
+    parent = Some parent
+  }
+
 let rec find_type id env =
   match Hashtbl.find env.type_table id with
   | Some def -> Some def
