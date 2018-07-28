@@ -4,6 +4,7 @@ type prim =
   | Arrow
   | Int
   | Float
+[@@deriving compare]
 
 type unassigned_var = {
     id : int;
@@ -25,12 +26,6 @@ type algebraic = (Ident.t, (t array * int)) Hashtbl.t
 type def = Alias of t | Algebraic of algebraic
 
 type error = Unification_fail of t * t
-
-let compare_prim l r =
-  match l, r with
-  | Int, Float -> -1
-  | Float, Int -> 1
-  | _ -> 0
 
 let rec occurs (uvar : unassigned_var) = function
   | App(tcon, targ) -> occurs uvar tcon && occurs uvar targ
