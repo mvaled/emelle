@@ -1,7 +1,6 @@
 open Base
 
 type t =
-  | Autogen of int
   | Local of string
   | Path of string list
 [@@deriving compare, hash, sexp]

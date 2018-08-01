@@ -2,13 +2,13 @@ open Base
 
 type t = {
     type_table : (Ident.t, Type.def) Hashtbl.t;
-    term_table : (Ident.t, Type.t) Hashtbl.t;
+    term_table : (int, Type.t) Hashtbl.t;
     parent : t option
   }
 
 let extend parent = {
     type_table = Hashtbl.create (module Ident);
-    term_table = Hashtbl.create (module Ident);
+    term_table = Hashtbl.create (module Int);
     parent = Some parent
   }
 
