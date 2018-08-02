@@ -3,43 +3,51 @@ open Base
 type t = {
     type_table : (Ident.t, Type.def) Hashtbl.t;
     term_table : (int, Type.t) Hashtbl.t;
+    register_table : (string, int) Hashtbl.t;
     parent : t option
+  }
+
+let type_table env = env.type_table
+
+let term_table env = env.term_table
+
+let reg_table env = env.register_table
+
+let create () = {
+    type_table = Hashtbl.create (module Ident);
+    term_table = Hashtbl.create (module Int);
+    register_table = Hashtbl.create (module String);
+    parent = None
   }
 
 let extend parent = {
     type_table = Hashtbl.create (module Ident);
     term_table = Hashtbl.create (module Int);
+    register_table = Hashtbl.create (module String);
     parent = Some parent
   }
 
-let rec find_type id env =
-  match Hashtbl.find env.type_table id with
+let rec find f env id =
+  match Hashtbl.find (f env) id with
   | Some def -> Some def
   | None ->
      match env.parent with
-     | Some parent -> find_type id parent
+     | Some parent -> find f parent id
      | None -> None
 
-let rec find_term id env =
-  match Hashtbl.find env.term_table id with
-  | Some ty -> Some ty
-  | None ->
-     match env.parent with
-     | Some parent -> find_term id parent
-     | None -> None
+let find_type = find type_table
 
-let define_type env id def =
-  if Hashtbl.mem env.type_table id then
-    false
-  else (
-    Hashtbl.add_exn env.type_table ~key:id ~data:def;
-    true
-  )
+let find_term = find term_table
 
-let define_term env id def =
-  if Hashtbl.mem env.term_table id then
-    false
-  else (
-    Hashtbl.add_exn env.term_table ~key:id ~data:def;
-    true
-  )
+let find_reg = find reg_table
+
+let define tbl id def =
+  match Hashtbl.add tbl ~key:id ~data:def with
+  | `Ok -> true
+  | `Duplicate -> false
+
+let define_type env = define env.type_table
+
+let define_term env = define env.term_table
+
+let define_reg env = define env.register_table

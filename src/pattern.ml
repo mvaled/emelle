@@ -97,7 +97,7 @@ let rec decision_tree_of_matrix env = function
         (* Case 3 *)
         let rec handle_type = function
           | Type.Nominal typename ->
-             begin match Env.find_type typename env with
+             begin match Env.find_type env typename with
              | None -> None
              | Some (Alias ty) -> handle_type ty
              | Some (Algebraic alg) ->

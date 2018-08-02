@@ -11,6 +11,6 @@ and 'a expr' =
   | App of 'a expr * 'a expr
   | Case of 'a expr * ('a pattern * 'a expr) list
   | Lam of 'a pattern * 'a expr
-  | Let of 'a expr
-  | Let_rec of 'a expr
+  | Let of ('a pattern * 'a expr) list * 'a expr
+  | Let_rec of (string * 'a expr) list * 'a expr
   | Var of Ident.t
