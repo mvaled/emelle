@@ -97,10 +97,10 @@ let rec decision_tree_of_matrix env = function
         (* Case 3 *)
         let rec handle_type = function
           | Type.Nominal typename ->
-             begin match Env.find_type env typename with
+             begin match Env.find env typename with
              | None -> None
-             | Some (Alias ty) -> handle_type ty
-             | Some (Algebraic alg) ->
+             | Some (Type.Alias ty) -> handle_type ty
+             | Some (Type.Algebraic alg) ->
                 let jump_tbl = Hashtbl.create (module Ident) in
                 let default = default_matrix rows in
                 let result =

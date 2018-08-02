@@ -1,7 +1,7 @@
 open Base
 
 type t = {
-    mutable env : Env.t;
+    mutable env : (int, Type.t) Env.t;
     mutable level : int;
     mutable vargen : int;
   }
@@ -124,9 +124,11 @@ let rec infer checker =
        Error result
   | Term.Lam(id, body) ->
      let var = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
-     checker.env <- Env.extend checker.env;
-     let _ = Env.define_term checker.env id var in
+     let old_env = checker.env in
+     checker.env <- Env.extend (Hashtbl.create (module Int)) checker.env;
+     let _ = Env.define checker.env id var in
      (infer checker body) >>= fun body_ty ->
+     checker.env <- old_env;
      Ok (Type.App(Type.App(Type.Prim Type.Arrow, var), body_ty))
   (* TODO *)
   | Term.Let _ -> Error Sequence.empty
