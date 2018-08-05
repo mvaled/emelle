@@ -1,3 +1,6 @@
 type error =
+  | Redefined_id of Ident.t
   | Unification_fail of Type.t * Type.t
-  | Unresolved_id of Ident.t * Ident.t
+  | Unimplemented of string
+  | Unreachable
+  | Unresolved_id of Ident.t
