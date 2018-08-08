@@ -2,3 +2,8 @@
   (name emelle)
   (libraries base)
   (preprocess (pps ppx_jane)))
+
+(ocamllex lexer)
+
+(menhir
+  (modules parser))
