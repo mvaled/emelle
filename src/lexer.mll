@@ -20,7 +20,7 @@
       ]
 }
 
-let whitespace = [' ' '\t' '\n']
+let whitespace = [' ' '\t']
 let digit = ['0'-'9']
 let upper = ['A'-'Z']
 let lower = ['a'-'z']
@@ -29,6 +29,7 @@ let ident = (upper | lower) (alphanum | '_' | '\'')*
 
 rule expr = parse
   | whitespace { expr lexbuf }
+  | '\n' { Lexing.new_line lexbuf; expr lexbuf }
   | '(' { LPARENS }
   | ')' { RPARENS }
   | "->" { ARROW }
