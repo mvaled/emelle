@@ -104,10 +104,10 @@ let rec decision_tree_of_matrix env = function
                 let jump_tbl = Hashtbl.create (module Ident) in
                 let default = default_matrix rows in
                 let result =
-                  Hashtbl.fold ~f:(fun ~key:id ~data:(prods, _) acc ->
+                  Hashtbl.fold ~f:(fun ~key:id ~data:(products, _) acc ->
                       if acc then
                         let matrix =
-                          match specialize id (Array.length prods) rows with
+                          match specialize id (Array.length products) rows with
                           | [] -> default
                           | matrix -> matrix
                         in
@@ -117,7 +117,7 @@ let rec decision_tree_of_matrix env = function
                            true
                         | None -> false
                       else
-                        false) alg ~init:true
+                        false) alg.constrs ~init:true
                 in
                 if result then
                   if i = 0 then
