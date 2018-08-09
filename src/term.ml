@@ -7,7 +7,7 @@ type 'a t =
   | Lam of int * 'a t
   | Let of int * 'a t * 'a t
   | Let_rec of 'a bind_group * 'a t
-  | Select of Ident.t * Ident.t * int * 'a t
+  | Select of Ident.t * string * int * 'a t
   | Var of int
 
 and 'a bind_group = (int * 'a t) list

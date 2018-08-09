@@ -77,8 +77,7 @@ expr_atom:
 
 pattern:
   | typename = IDENT COLONCOLON con = IDENT args = list(pattern) {
-         (($symbolstartpos, $endpos),
-          Ast.Con(Ident.Local typename, Ident.Local con, args))
+         (($symbolstartpos, $endpos), Ast.Con(Ident.Local typename, con, args))
       }
   | IDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
   | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }

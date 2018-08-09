@@ -1,14 +1,14 @@
 open Base
 
 type t = {
+    types : (Ident.t, Type.adt) Hashtbl.t;
     mutable env : (int, Type.t) Hashtbl.t;
     mutable level : int;
     mutable vargen : int;
   }
 
 (** Perform the occurs check, returning true if the typevar occurs in the type.
-    Adjusts the levels of unassigned typevars when necessary.
- *)
+    Adjusts the levels of unassigned typevars when necessary. *)
 let rec occurs (uvar : Type.unassigned_var) = function
   | Type.App(tcon, targ) -> occurs uvar tcon && occurs uvar targ
   | Type.Nominal _ -> false
@@ -96,6 +96,22 @@ let inst checker target_level =
     | ty -> ty
   in helper
 
+(** Given an ADT and one of its constructors, return Some the constructor's type
+    or None if the constructor doesn't belong to the ADT *)
+let type_of_constr checker ident adt constr =
+  let fresh_uvars = Hashtbl.create (module Type.UVar) in
+  List.iter ~f:(fun uvar ->
+      let fresh = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
+      Hashtbl.add_exn fresh_uvars ~key:uvar ~data:fresh
+    ) adt.Type.typeparams;
+  match Hashtbl.find adt.constrs constr with
+  | Some (product, _) ->
+     let f uvar = Hashtbl.find_exn fresh_uvars uvar in
+     let output_ty =
+       Type.with_params (Nominal ident) (List.map ~f:f adt.typeparams)
+     in Some (Type.curry (Array.to_list product) output_ty)
+  | None -> None
+
 let rec infer checker =
   let (>>=) = Result.(>>=) in
   function
@@ -168,7 +184,31 @@ let rec infer checker =
      ) else
        Error result
 
-  (* TODO *)
-  | Term.Select _ -> Error Sequence.empty
+  | Term.Select(typename, constr, idx, data) ->
+     begin match Hashtbl.find checker.types typename with
+     | Some adt ->
+        begin match Hashtbl.find adt.constrs constr with
+        | Some (tys, _) ->
+           infer checker data >>= fun ty0 ->
+           begin match type_of_constr checker typename adt constr with
+           | Some ty1 ->
+              let result = unify ty0 ty1 in
+              if Sequence.is_empty result then
+                Ok (tys.(idx))
+              else
+                Error result
+           | None ->
+              (* None means constr isn't defined in adt; this occurence is
+                 checked in the outer match *)
+              Error (Sequence.return Message.Unreachable)
+           end
+        | None ->
+           Error (Sequence.return (Message.Unknown_constr(typename, constr)))
+        end
+     | None -> Error (Sequence.return (Message.Unresolved_type typename))
+     end
 
-  | Term.Var _ -> Error Sequence.empty
+  | Term.Var reg ->
+     match Hashtbl.find checker.env reg with
+     | Some ty -> Ok (inst checker (checker.level + 1) ty)
+     | None -> Error (Sequence.return Message.Unreachable)

@@ -2,7 +2,7 @@ open Base
 
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =
-  | Con of Ident.t * Ident.t * 'a pattern list
+  | Con of Ident.t * string * 'a pattern list
   | Var of string
   | Wild
 
