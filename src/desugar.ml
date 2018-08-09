@@ -61,18 +61,18 @@ let rec term_of_ast_pattern st def cont (ann, node) =
             let reg = fresh_register st in
             let def = Term.Select(typename, constr, idx, def) in
             let body = outer_loop (idx + 1) ((arg, reg)::arg_regs) args in
-            body >>| fun body -> Term.Let([reg, def], body)
+            body >>| fun body -> Term.Let(reg, def, body)
        in outer_loop 0 [] args
     | Ast.Var id ->
        (* Map the idetifier to its register *)
        begin match Env.find st.registers id with
-       | Some reg -> Ok (Term.Let([(reg, def)], cont))
+       | Some reg -> Ok (Term.Let(reg, def, cont))
        | None ->
           Error (Sequence.return Message.Unreachable)
        end
     | Ast.Wild ->
        let reg = fresh_register st in
-       Ok (Term.Let([reg, def], cont))
+       Ok (Term.Let(reg, def, cont))
   in term >>| fun term -> Term.Ann { ann = ann; term = term }
 
 let rec term_of_expr st (ann, node) =
