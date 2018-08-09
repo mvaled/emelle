@@ -99,17 +99,12 @@ let inst checker target_level =
 (** Given an ADT and one of its constructors, return Some the constructor's type
     or None if the constructor doesn't belong to the ADT *)
 let type_of_constr checker ident adt constr =
-  let fresh_uvars = Hashtbl.create (module Type.UVar) in
-  List.iter ~f:(fun uvar ->
-      let fresh = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
-      Hashtbl.add_exn fresh_uvars ~key:uvar ~data:fresh
-    ) adt.Type.typeparams;
-  match Hashtbl.find adt.constrs constr with
+  match Hashtbl.find adt.Type.constrs constr with
   | Some (product, _) ->
-     let f uvar = Hashtbl.find_exn fresh_uvars uvar in
+     let f uvar = Type.Var (ref (Type.Unassigned uvar)) in
      let output_ty =
        Type.with_params (Nominal ident) (List.map ~f:f adt.typeparams)
-     in Some (Type.curry (Array.to_list product) output_ty)
+     in Some (inst checker 0 (Type.curry (Array.to_list product) output_ty))
   | None -> None
 
 let rec infer checker =
