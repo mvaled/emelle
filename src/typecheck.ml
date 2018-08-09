@@ -1,7 +1,7 @@
 open Base
 
 type t = {
-    mutable env : (int, Type.t) Env.t;
+    mutable env : (int, Type.t) Hashtbl.t;
     mutable level : int;
     mutable vargen : int;
   }
@@ -68,6 +68,12 @@ let fresh_utvar checker =
   checker.vargen <- old + 1;
   Type.{ id = old; level = checker.level }
 
+let in_new_level f st =
+  st.level <- st.level + 1;
+  let result = f st in
+  st.level <- st.level - 1;
+  result
+
 (** Instantiate a type scheme by replacing type variables whose levels are
     greater than or equal to target_level with type variables of level
     checker.level *)
@@ -94,6 +100,7 @@ let rec infer checker =
   let (>>=) = Result.(>>=) in
   function
   | Term.Ann{term; _} -> infer checker term
+
   | Term.App(f, x) ->
      begin match (infer checker f, infer checker x) with
      | (Ok f_ty, Ok x_ty) ->
@@ -106,6 +113,7 @@ let rec infer checker =
      | (Error f_err, Error x_err) -> Error (Sequence.append f_err x_err)
      | (err, Ok _) | (Ok _, err) -> err
      end
+
   | Term.Case(_, _, cases) ->
      let var = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
      let types =
@@ -122,16 +130,45 @@ let rec infer checker =
        Ok var
      else
        Error result
+
   | Term.Lam(id, body) ->
      let var = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
-     let old_env = checker.env in
-     checker.env <- Env.extend (Hashtbl.create (module Int)) checker.env;
-     let _ = Env.define checker.env id var in
+     Hashtbl.add_exn checker.env ~key:id ~data:var;
      (infer checker body) >>= fun body_ty ->
-     checker.env <- old_env;
      Ok (Type.App(Type.App(Type.Prim Type.Arrow, var), body_ty))
+
+  | Term.Let(lhs, rhs, body) ->
+     in_new_level (fun checker -> infer checker rhs) checker >>= fun ty ->
+     Hashtbl.add_exn checker.env ~key:lhs ~data:ty;
+     infer checker body
+
+  | Term.Let_rec(bindings, body) ->
+     let result =
+       in_new_level (fun checker ->
+           (* Associate each new binding with a fresh type variable *)
+           let f (lhs, _) =
+             let ty = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
+             Hashtbl.add_exn checker.env ~key:lhs ~data:ty
+           in
+           List.iter ~f:f bindings;
+           (* Type infer the RHS of each new binding and unify the result with
+              the type variable *)
+           let f acc (lhs, rhs) =
+             let tvar = Hashtbl.find_exn checker.env lhs in
+             Sequence.append acc (
+                 match infer checker rhs with
+                 | Ok ty -> unify tvar ty
+                 | Error e -> e
+               )
+           in List.fold ~f:f ~init:Sequence.empty bindings
+         ) checker
+     in
+     if Sequence.is_empty result then (
+       infer checker body
+     ) else
+       Error result
+
   (* TODO *)
-  | Term.Let _ -> Error Sequence.empty
-  | Term.Let_rec _ -> Error Sequence.empty
   | Term.Select _ -> Error Sequence.empty
+
   | Term.Var _ -> Error Sequence.empty
