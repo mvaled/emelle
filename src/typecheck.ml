@@ -96,17 +96,6 @@ let inst checker target_level =
     | ty -> ty
   in helper
 
-(** Given an ADT and one of its constructors, return Some the constructor's type
-    or None if the constructor doesn't belong to the ADT *)
-let type_of_constr checker ident adt constr =
-  match Hashtbl.find adt.Type.constrs constr with
-  | Some (product, _) ->
-     let f uvar = Type.Var (ref (Type.Unassigned uvar)) in
-     let output_ty =
-       Type.with_params (Nominal ident) (List.map ~f:f adt.typeparams)
-     in Some (inst checker 0 (Type.curry (Array.to_list product) output_ty))
-  | None -> None
-
 let rec infer checker =
   let (>>=) = Result.(>>=) in
   function
@@ -185,9 +174,9 @@ let rec infer checker =
         begin match Hashtbl.find adt.constrs constr with
         | Some (tys, _) ->
            infer checker data >>= fun ty0 ->
-           begin match type_of_constr checker typename adt constr with
+           begin match Type.type_of_constr typename adt constr with
            | Some ty1 ->
-              let result = unify ty0 ty1 in
+              let result = unify ty0 (inst checker 0 ty1) in
               if Sequence.is_empty result then
                 Ok (tys.(idx))
               else

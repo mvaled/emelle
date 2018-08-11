@@ -51,3 +51,14 @@ let rec curry input_tys output_ty =
   match input_tys with
   | [] -> output_ty
   | (ty::tys) -> App(App(Prim Arrow, ty), curry tys output_ty)
+
+(** Given an ADT and one of its constructors, return Some the constructor's type
+    or None if the constructor doesn't belong to the ADT *)
+let type_of_constr ident adt constr =
+  match Hashtbl.find adt.constrs constr with
+  | Some (product, _) ->
+     let f uvar = Var (ref (Unassigned uvar)) in
+     let output_ty =
+       with_params (Nominal ident) (List.map ~f:f adt.typeparams)
+     in Some (curry (Array.to_list product) output_ty)
+  | None -> None
