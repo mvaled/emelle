@@ -10,15 +10,6 @@ type unassigned_var = {
     id : int;
     mutable level : int;
   }
-[@@deriving compare, sexp]
-
-module UVar = struct
-  type t = unassigned_var
-  [@@deriving sexp]
-
-  let compare x y = compare x.id y.id
-  let hash x = x.id
-end
 
 type t =
   | App of t * t
@@ -32,7 +23,8 @@ and var =
 
 type adt = {
     typeparams: unassigned_var list;
-    constrs: (string, (t array * int)) Hashtbl.t;
+    constr_names: (string, int) Hashtbl.t;
+    constr_types: t array array;
   }
 
 type def =
@@ -52,13 +44,9 @@ let rec curry input_tys output_ty =
   | [] -> output_ty
   | (ty::tys) -> App(App(Prim Arrow, ty), curry tys output_ty)
 
-(** Given an ADT and one of its constructors, return Some the constructor's type
-    or None if the constructor doesn't belong to the ADT *)
+(** Given an ADT and one of its constructors, return the constructor's type *)
 let type_of_constr ident adt constr =
-  match Hashtbl.find adt.constrs constr with
-  | Some (product, _) ->
-     let f uvar = Var (ref (Unassigned uvar)) in
-     let output_ty =
-       with_params (Nominal ident) (List.map ~f:f adt.typeparams)
-     in Some (curry (Array.to_list product) output_ty)
-  | None -> None
+  let product = adt.constr_types.(constr) in
+  let f uvar = Var (ref (Unassigned uvar)) in
+  let output_ty = with_params (Nominal ident) (List.map ~f:f adt.typeparams) in
+  curry (Array.to_list product) output_ty

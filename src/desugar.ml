@@ -17,12 +17,30 @@ let with_registers f st tbl =
   st.registers <- old;
   result
 
-let rec pattern_of_ast_pattern (_, node) =
+let idx_of_constr st typename con =
+  match Env.find st.typedefs typename with
+  | Some (Algebraic adt) ->
+     begin match Hashtbl.find adt.constr_names con with
+     | Some idx -> Ok idx
+     | None -> Error (Sequence.return (Message.Unknown_constr(typename, con)))
+     end
+  | Some (Alias _) -> Error (Sequence.return (Message.Expected_adt typename))
+  | None -> Error (Sequence.return (Message.Unresolved_type typename))
+
+let rec pattern_of_ast_pattern st (_, node) =
+  let open Result.Monad_infix in
   match node with
   | Ast.Con(typename, con, pats) ->
-     Pattern.Con(typename, con, List.map ~f:pattern_of_ast_pattern pats)
-  | Ast.Var _ -> Pattern.Wild
-  | Ast.Wild -> Pattern.Wild
+     let f next acc =
+       acc >>= fun pats ->
+       pattern_of_ast_pattern st next >>| fun pat ->
+       pat::pats
+     in
+     idx_of_constr st typename con >>= fun idx ->
+     List.fold_right ~f:f ~init:(Ok []) pats >>| fun patterns ->
+     Pattern.Con(typename, idx, patterns)
+  | Ast.Var _ -> Ok Pattern.Wild
+  | Ast.Wild -> Ok Pattern.Wild
 
 (** Walk the pattern and map identifiers to fresh registers *)
 let rec gen_registers st (_, node) =
@@ -58,8 +76,9 @@ let rec term_of_ast_pattern st def cont (ann, node) =
                  term_of_ast_pattern st (Term.Var reg) cont arg
             in inner_loop arg_regs
          | (arg::args) ->
+            idx_of_constr st typename constr >>= fun constr_idx ->
             let reg = fresh_register st in
-            let def = Term.Select(typename, constr, idx, def) in
+            let def = Term.Select(typename, constr_idx, idx, def) in
             let body = outer_loop (idx + 1) ((arg, reg)::arg_regs) args in
             body >>| fun body -> Term.Let(reg, def, body)
        in outer_loop 0 [] args
@@ -86,15 +105,19 @@ let rec term_of_expr st (ann, node) =
        | (Error e, Ok _) | (Ok _, Error e) -> Error e
        | Error e1, Error e2 -> Error (Sequence.append e1 e2)
        end
+
     | Ast.Case(test, cases) ->
        term_of_expr st test >>= fun test ->
-       let rows =
-         List.mapi ~f:(fun i (pat, _) ->
-             Pattern.{ first_pattern = pattern_of_ast_pattern pat
-                     ; rest_patterns = []
-                     ; action = i }
-           ) cases
+       let rows_result =
+         List.fold_right ~f:(fun (pat, _) acc ->
+             acc >>= fun (i, list) ->
+             pattern_of_ast_pattern st pat >>| fun pat ->
+             (i + 1), Pattern.{ first_pattern = pat
+                              ; rest_patterns = []
+                              ; action = i }::list
+           ) ~init:(Ok (0, [])) cases
        in
+       rows_result >>= fun (_, rows) ->
        let branches =
          List.fold_left
            ~f:(fun acc (pat, expr) ->
@@ -113,10 +136,12 @@ let rec term_of_expr st (ann, node) =
        | Some tree -> Ok (Term.Case([test], tree, branches))
        | None -> Error (Sequence.return (Message.Unreachable))
        end
+
     | Ast.Lam(pat, body) ->
+       pattern_of_ast_pattern st pat >>= fun pat' ->
        let reg = fresh_register st in
        let matrix = [
-           Pattern.{ first_pattern = pattern_of_ast_pattern pat
+           Pattern.{ first_pattern = pat'
                    ; rest_patterns = []
                    ; action = 0 }
          ]
@@ -131,6 +156,7 @@ let rec term_of_expr st (ann, node) =
             ) st (Hashtbl.create (module String))
        | None -> Error (Sequence.return (Message.Unreachable))
        end
+
     | Ast.Let(bindings, body) ->
        let rec f = function
          | [] -> term_of_expr st body
@@ -141,12 +167,14 @@ let rec term_of_expr st (ann, node) =
             term_of_ast_pattern st def cont pat
        in
        with_registers (fun _ -> f bindings) st (Hashtbl.create (module String))
+
     | Ast.Let_rec(bindings, body) ->
        let hashtbl = Hashtbl.create (module String) in
        List.iter ~f:(fun (str, _) ->
            Hashtbl.add_exn hashtbl ~key:str ~data:(fresh_register st)
          ) bindings;
        with_registers (fun st -> term_of_expr st body) st hashtbl
+
     | Ast.Var id ->
        begin match id with
        | Local str ->
@@ -156,4 +184,5 @@ let rec term_of_expr st (ann, node) =
           end
        | Path _ -> Error (Sequence.return (Message.Unimplemented "path"))
        end
+
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })

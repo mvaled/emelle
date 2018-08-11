@@ -171,24 +171,14 @@ let rec infer checker =
   | Term.Select(typename, constr, idx, data) ->
      begin match Hashtbl.find checker.types typename with
      | Some adt ->
-        begin match Hashtbl.find adt.constrs constr with
-        | Some (tys, _) ->
-           infer checker data >>= fun ty0 ->
-           begin match Type.type_of_constr typename adt constr with
-           | Some ty1 ->
-              let result = unify ty0 (inst checker 0 ty1) in
-              if Sequence.is_empty result then
-                Ok (tys.(idx))
-              else
-                Error result
-           | None ->
-              (* None means constr isn't defined in adt; this occurence is
-                 checked in the outer match *)
-              Error (Sequence.return Message.Unreachable)
-           end
-        | None ->
-           Error (Sequence.return (Message.Unknown_constr(typename, constr)))
-        end
+        infer checker data >>= fun ty0 ->
+        let ty1 = Type.type_of_constr typename adt constr in
+        let result = unify ty0 (inst checker 0 ty1) in
+        let tys = adt.Type.constr_types.(constr) in
+        if Sequence.is_empty result then
+          Ok (tys.(idx))
+        else
+          Error result
      | None -> Error (Sequence.return (Message.Unresolved_type typename))
      end
 

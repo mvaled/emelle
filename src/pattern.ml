@@ -1,13 +1,13 @@
 open Base
 
 type t =
-  | Con of Ident.t * string * t list (** Constructor pattern *)
+  | Con of Ident.t * int * t list (** Constructor pattern *)
   | Wild (** Wildcard pattern *)
 
 type decision_tree =
   | Fail
   | Leaf of int
-  | Switch of (string, decision_tree) Hashtbl.t
+  | Switch of (int, decision_tree) Hashtbl.t
   | Swap of int * decision_tree
 
 type row = {
@@ -56,7 +56,7 @@ let find_type ty =
 (** Specialize operation as described in Compiling Pattern Matching to Good
     Decision Trees *)
 let specialize
-      (constr : string)
+      (constr : int)
       (count  : int)
       (rows   : row list)
     : matrix =
@@ -66,7 +66,7 @@ let specialize
     | n -> next::(ana next (n - 1)) in
   let helper rows row =
     match row.first_pattern with
-    | Con(_, id, cpats) when String.equal id constr ->
+    | Con(_, id, cpats) when id = constr ->
        { row with rest_patterns = cpats@row.rest_patterns }::rows
     | Con _ -> rows
     | Wild ->
@@ -101,10 +101,10 @@ let rec decision_tree_of_matrix env = function
              | None -> None
              | Some (Type.Alias ty) -> handle_type ty
              | Some (Type.Algebraic alg) ->
-                let jump_tbl = Hashtbl.create (module String) in
+                let jump_tbl = Hashtbl.create (module Int) in
                 let default = default_matrix rows in
                 let result =
-                  Hashtbl.fold ~f:(fun ~key:id ~data:(products, _) acc ->
+                  Array.foldi ~f:(fun id acc products ->
                       if acc then
                         let matrix =
                           match specialize id (Array.length products) rows with
@@ -117,7 +117,7 @@ let rec decision_tree_of_matrix env = function
                            true
                         | None -> false
                       else
-                        false) alg.constrs ~init:true
+                        false) alg.constr_types ~init:true
                 in
                 if result then
                   if i = 0 then
