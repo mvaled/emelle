@@ -33,7 +33,7 @@ and var =
 type adt = {
     typeparams: UVar.t list;
     constr_names: (string, int) Hashtbl.t;
-    constr_types: t array array;
+    constrs: (string * t array) array;
   }
 
 type def =
@@ -55,7 +55,7 @@ let rec curry input_tys output_ty =
 
 (** Given an ADT and one of its constructors, return the constructor's type *)
 let type_of_constr ident adt constr =
-  let product = adt.constr_types.(constr) in
+  let _, product = adt.constrs.(constr) in
   let f uvar = Var (ref (Unassigned uvar)) in
   let output_ty = with_params (Nominal ident) (List.map ~f:f adt.typeparams) in
   curry (Array.to_list product) output_ty

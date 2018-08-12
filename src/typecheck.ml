@@ -174,7 +174,7 @@ let rec infer checker =
         infer checker data >>= fun ty0 ->
         let ty1 = Type.type_of_constr typename adt constr in
         let result = unify ty0 (inst checker 0 ty1) in
-        let tys = adt.Type.constr_types.(constr) in
+        let _, tys = adt.Type.constrs.(constr) in
         if Sequence.is_empty result then
           Ok (tys.(idx))
         else
