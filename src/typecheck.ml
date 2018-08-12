@@ -9,7 +9,7 @@ type t = {
 
 (** Perform the occurs check, returning true if the typevar occurs in the type.
     Adjusts the levels of unassigned typevars when necessary. *)
-let rec occurs (uvar : Type.unassigned_var) = function
+let rec occurs (uvar : Type.UVar.t) = function
   | Type.App(tcon, targ) -> occurs uvar tcon && occurs uvar targ
   | Type.Nominal _ -> false
   | Type.Prim _ -> false
@@ -17,7 +17,7 @@ let rec occurs (uvar : Type.unassigned_var) = function
      match !cell with
      | Type.Assigned ty -> occurs uvar ty
      | Type.Unassigned u ->
-        if u.id = uvar.id then
+        if (Type.UVar.compare u uvar) = 0 then
           true
         else (
           (* Adjust levels if necessary *)
@@ -46,7 +46,7 @@ let rec unify lhs rhs =
           (* A variable occurring in itself is not an error *)
           | Type.Var {
               contents = Type.Unassigned uvar2
-            } when uvar.id = uvar2.id ->
+            } when (Type.UVar.compare uvar uvar2) = 0 ->
              Sequence.empty
           | _ when occurs uvar ty ->
              Sequence.return (Message.Unification_fail(lhs, rhs))
@@ -66,7 +66,7 @@ let unify_many ty =
 let fresh_utvar checker =
   let old = checker.vargen in
   checker.vargen <- old + 1;
-  Type.{ id = old; level = checker.level }
+  Type.UVar.{ id = Type.UVar.Gen old; level = checker.level; name = None }
 
 let in_new_level f st =
   st.level <- st.level + 1;
@@ -78,19 +78,19 @@ let in_new_level f st =
     greater than or equal to target_level with type variables of level
     checker.level *)
 let inst checker target_level =
-  let map = Hashtbl.create (module Int) in
+  let map = Hashtbl.create (module Type.UVar) in
   let rec helper = function
     | Type.App(tcon, targ) -> Type.App(helper tcon, helper targ)
     | Type.Var { contents = Type.Assigned ty } -> helper ty
     | (Type.Var { contents = Type.Unassigned uvar }) as var ->
-       if uvar.Type.level < target_level then
+       if uvar.Type.UVar.level < target_level then
          var
        else
-         begin match Hashtbl.find map uvar.id with
+         begin match Hashtbl.find map uvar with
          | Some uvar2 -> Type.Var (ref (Type.Unassigned uvar2))
          | None ->
             let uvar2 = fresh_utvar checker in
-            Hashtbl.add_exn map ~key:uvar.id ~data:uvar2;
+            Hashtbl.add_exn map ~key:uvar ~data:uvar2;
             Type.Var (ref (Type.Unassigned uvar2))
          end
     | ty -> ty

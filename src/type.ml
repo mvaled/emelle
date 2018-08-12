@@ -6,10 +6,19 @@ type prim =
   | Float
 [@@deriving compare]
 
-type unassigned_var = {
-    id : int;
-    mutable level : int;
-  }
+module UVar = struct
+  type id =
+    | Annotated of int
+    | Gen of int
+  [@@deriving compare, hash, sexp]
+
+  type t = {
+      id : id;
+      mutable level : int [@compare.ignore][@hash.ignore];
+      name : string option [@compare.ignore][@hash.ignore];
+    }
+  [@@deriving compare, hash, sexp]
+end
 
 type t =
   | App of t * t
@@ -18,11 +27,11 @@ type t =
   | Var of var ref
 
 and var =
-  | Unassigned of unassigned_var
+  | Unassigned of UVar.t
   | Assigned of t
 
 type adt = {
-    typeparams: unassigned_var list;
+    typeparams: UVar.t list;
     constr_names: (string, int) Hashtbl.t;
     constr_types: t array array;
   }

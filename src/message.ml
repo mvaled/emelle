@@ -1,3 +1,5 @@
+open Base
+
 type error =
   | Expected_adt of Ident.t
   | Redefined_id of Ident.t

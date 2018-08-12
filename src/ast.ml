@@ -1,5 +1,14 @@
 open Base
 
+type polytype = Forall of string list * monotype
+and monotype =
+  | App of monotype * monotype
+  | Arrow
+  | Float
+  | Int
+  | Rank of polytype
+  | Var of Ident.t
+
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =
   | Con of Ident.t * string * 'a pattern list
