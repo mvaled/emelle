@@ -7,6 +7,34 @@ type t = {
     mutable vargen : int;
   }
 
+let rec kind_of_type checker =
+  let open Result.Monad_infix in
+  function
+  | Type.App(tcon, targ) ->
+     kind_of_type checker targ >>= fun kind ->
+     kind_of_type checker tcon >>=
+       begin function
+         | Type.Poly(k1, k2) ->
+            if Type.equals_kind kind k1 then
+              Ok k2
+            else
+              Error (Sequence.return Message.Kind_mismatch)
+         | Type.Mono -> Error Sequence.empty
+       end
+  | Type.Nominal id ->
+     begin match Hashtbl.find checker.types id with
+     | Some adt ->
+        Ok (Type.curry_kinds
+              (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams)
+              Type.Mono)
+     | None -> Error (Sequence.return (Message.Unresolved_type id))
+     end
+  | Type.Prim Type.Arrow -> Ok Type.Mono
+  | Type.Prim Type.Float -> Ok Type.Mono
+  | Type.Prim Type.Int -> Ok Type.Mono
+  | Type.Var { contents = Type.Assigned ty } -> kind_of_type checker ty
+  | Type.Var { contents = Type.Unassigned uvar } -> Ok uvar.kind
+
 (** Perform the occurs check, returning true if the typevar occurs in the type.
     Adjusts the levels of unassigned typevars when necessary. *)
 let rec occurs (uvar : Type.UVar.t) = function
@@ -28,13 +56,13 @@ let rec occurs (uvar : Type.UVar.t) = function
         )
 
 (** Unify two types, returning the unification errors *)
-let rec unify lhs rhs =
+let rec unify checker lhs rhs =
   if not (phys_equal lhs rhs) then
     Sequence.empty
   else
     match lhs, rhs with
     | Type.App(lcon, larg), Type.App(rcon, rarg) ->
-       Sequence.append (unify lcon rcon) (unify larg rarg)
+       Sequence.append (unify checker lcon rcon) (unify checker larg rarg)
     | Type.Nominal lstr, Type.Nominal rstr when (Ident.compare lstr rstr) = 0 ->
        Sequence.empty
     | Type.Prim lprim, Type.Prim rprim when Type.equal_prim lprim rprim ->
@@ -50,23 +78,33 @@ let rec unify lhs rhs =
              Sequence.empty
           | _ when occurs uvar ty ->
              Sequence.return (Message.Unification_fail(lhs, rhs))
-          | _ ->
-             v := Type.Assigned ty;
-             Sequence.empty
+          | ty ->
+             begin match kind_of_type checker ty with
+             | Ok kind ->
+                if Type.equals_kind kind uvar.kind then (
+                  v := Type.Assigned ty;
+                  Sequence.empty
+                ) else
+                  Sequence.return Message.Kind_mismatch
+             | Error e -> e
+             end
           end
-       | Type.Assigned t -> unify t ty
+       | Type.Assigned t -> unify checker t ty
        end
     | _ -> Sequence.return (Message.Unification_fail(lhs, rhs))
 
-let unify_many ty =
+let unify_many checker ty =
   List.fold
-    ~f:(fun acc next -> Sequence.append acc (unify ty next))
+    ~f:(fun acc next -> Sequence.append acc (unify checker ty next))
     ~init:Sequence.empty
 
-let fresh_utvar checker =
+let fresh_utvar checker kind =
   let old = checker.vargen in
   checker.vargen <- old + 1;
-  Type.UVar.{ id = Type.UVar.Gen old; level = checker.level; name = None }
+  Type.UVar.{ id = Type.UVar.Gen old
+            ; kind = kind
+            ; level = checker.level
+            ; name = None }
 
 let in_new_level f st =
   st.level <- st.level + 1;
@@ -87,11 +125,11 @@ let inst checker target_level =
          var
        else
          begin match Hashtbl.find map uvar with
-         | Some uvar2 -> Type.Var (ref (Type.Unassigned uvar2))
+         | Some uvar2 -> Type.of_uvar uvar2
          | None ->
-            let uvar2 = fresh_utvar checker in
+            let uvar2 = fresh_utvar checker uvar.kind in
             Hashtbl.add_exn map ~key:uvar ~data:uvar2;
-            Type.Var (ref (Type.Unassigned uvar2))
+            Type.of_uvar uvar2
          end
     | ty -> ty
   in helper
@@ -104,8 +142,8 @@ let rec infer checker =
   | Term.App(f, x) ->
      begin match (infer checker f, infer checker x) with
      | (Ok f_ty, Ok x_ty) ->
-        let var = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
-        let result = unify f_ty (App(App(Prim Arrow, x_ty), var)) in
+        let var = Type.of_uvar (fresh_utvar checker Type.Mono) in
+        let result = unify checker f_ty (App(App(Prim Arrow, x_ty), var)) in
         if Sequence.is_empty result then
           Ok x_ty
         else
@@ -115,7 +153,7 @@ let rec infer checker =
      end
 
   | Term.Case(_, _, cases) ->
-     let var = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
+     let var = Type.of_uvar (fresh_utvar checker Type.Mono) in
      let types =
        Array.fold
          ~f:(fun acc next ->
@@ -125,14 +163,14 @@ let rec infer checker =
          ) ~init:(Ok []) cases
      in
      types >>= fun types ->
-     let result = unify_many var types in
+     let result = unify_many checker var types in
      if Sequence.is_empty result then
        Ok var
      else
        Error result
 
   | Term.Lam(id, body) ->
-     let var = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
+     let var = Type.of_uvar (fresh_utvar checker Type.Mono) in
      Hashtbl.add_exn checker.env ~key:id ~data:var;
      (infer checker body) >>= fun body_ty ->
      Ok (Type.App(Type.App(Type.Prim Type.Arrow, var), body_ty))
@@ -147,7 +185,7 @@ let rec infer checker =
        in_new_level (fun checker ->
            (* Associate each new binding with a fresh type variable *)
            let f (lhs, _) =
-             let ty = Type.Var (ref (Type.Unassigned (fresh_utvar checker))) in
+             let ty = Type.of_uvar (fresh_utvar checker Type.Mono) in
              Hashtbl.add_exn checker.env ~key:lhs ~data:ty
            in
            List.iter ~f:f bindings;
@@ -157,7 +195,7 @@ let rec infer checker =
              let tvar = Hashtbl.find_exn checker.env lhs in
              Sequence.append acc (
                  match infer checker rhs with
-                 | Ok ty -> unify tvar ty
+                 | Ok ty -> unify checker tvar ty
                  | Error e -> e
                )
            in List.fold ~f:f ~init:Sequence.empty bindings
@@ -173,7 +211,7 @@ let rec infer checker =
      | Some adt ->
         infer checker data >>= fun ty0 ->
         let ty1 = Type.type_of_constr typename adt constr in
-        let result = unify ty0 (inst checker 0 ty1) in
+        let result = unify checker ty0 (inst checker 0 ty1) in
         let _, tys = adt.Type.constrs.(constr) in
         if Sequence.is_empty result then
           Ok (tys.(idx))

@@ -2,6 +2,7 @@ open Base
 
 type error =
   | Expected_adt of Ident.t
+  | Kind_mismatch
   | Redefined_id of Ident.t
   | Unification_fail of Type.t * Type.t
   | Unimplemented of string
