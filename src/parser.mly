@@ -41,7 +41,7 @@ expr_kw:
   | CASE test = expr WITH option(BAR) cases = separated_list(BAR, case) {
         (($symbolstartpos, $endpos), Ast.Case(test, cases))
       }
-  | FUN option(BAR) lambda_case separated_list(BAR, lambda_case) {
+  | FUN option(BAR) lambda_case list(BAR lambda_case { $2 }) {
         (($symbolstartpos, $endpos), Ast.Lam($3, $4))
       }
   | LET bindings = separated_list(AND, binding) IN body = expr {
