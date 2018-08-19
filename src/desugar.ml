@@ -107,7 +107,7 @@ let rec term_of_expr st (ann, node) =
                  term_of_expr st expr >>| fun body ->
                  let pat_term = term_of_pattern st reg_var body pat in
                  let pat = pattern_t_of_pattern pat in
-                 ((i + 1)
+                 ( (i + 1)
                  , Pattern.{ first_pattern = pat
                            ; rest_patterns = []
                            ; action = i }::pats
@@ -148,27 +148,21 @@ let rec term_of_expr st (ann, node) =
          | [] -> term_of_expr st body
          | (pat, def)::xs ->
             term_of_expr st def >>= fun def ->
-            let result =
-              with_registers (fun _ ->
-                  let reg = fresh_register st in
-                  pattern_of_ast_pattern st reg pat >>= fun pat ->
-                  let pat' = pattern_t_of_pattern pat in
-                  let matrix = [
-                      Pattern.{ first_pattern = pat'
-                              ; rest_patterns = []
-                              ; action = 0 }
-                    ]
-                  in
-                  match Pattern.decision_tree_of_matrix st.typedefs matrix with
-                  | Some tree -> Ok (pat, tree)
-                  | None -> Error (Sequence.return Message.Unreachable)
-                ) st (Hashtbl.create (module String))
+            let reg = fresh_register st in
+            pattern_of_ast_pattern st reg pat >>= fun pat ->
+            let pat' = pattern_t_of_pattern pat in
+            let matrix = [ Pattern.{ first_pattern = pat'
+                                   ; rest_patterns = []
+                                   ; action = 0 } ]
             in
-            result >>= fun (pat, tree) ->
-            f xs >>| fun cont ->
-            let term = term_of_pattern st def cont pat in
-            Term.Case([def], tree, [|term|])
-       in f bindings
+            match Pattern.decision_tree_of_matrix st.typedefs matrix with
+            | Some tree ->
+               f xs >>| fun cont ->
+               let term = term_of_pattern st def cont pat in
+               Term.Case([def], tree, [|term|])
+            | None -> Error (Sequence.return Message.Unreachable)
+       in
+       with_registers (fun _ -> f bindings) st (Hashtbl.create (module String))
 
     | Ast.Let_rec(bindings, body) ->
        let hashtbl = Hashtbl.create (module String) in
@@ -176,7 +170,7 @@ let rec term_of_expr st (ann, node) =
          List.map ~f:(fun (str, expr) ->
              let reg = fresh_register st in
              Hashtbl.add_exn hashtbl ~key:str ~data:reg;
-           (reg, expr)
+             (reg, expr)
            ) bindings;
        in
        with_registers (fun st ->
