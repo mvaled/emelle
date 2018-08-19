@@ -18,7 +18,7 @@ let rec kind_of_type checker =
             if Type.equals_kind kind k1 then
               Ok k2
             else
-              Error (Sequence.return Message.Kind_mismatch)
+              Error (Sequence.return Message.Mismatched_kinds)
          | Type.Mono -> Error Sequence.empty
        end
   | Type.Nominal id ->
@@ -85,7 +85,7 @@ let rec unify checker lhs rhs =
                   v := Type.Assigned ty;
                   Sequence.empty
                 ) else
-                  Sequence.return Message.Kind_mismatch
+                  Sequence.return Message.Mismatched_kinds
              | Error e -> e
              end
           end

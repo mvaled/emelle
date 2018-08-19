@@ -124,24 +124,59 @@ let rec term_of_expr st (ann, node) =
        | None -> Error (Sequence.return (Message.Unreachable))
        end
 
-    | Ast.Lam(pat, body) ->
-       with_registers (fun _ ->
-           let reg = fresh_register st in
-           pattern_of_ast_pattern st reg pat >>= fun pat ->
-           let pat' = pattern_t_of_pattern pat in
-           let matrix = [
-               Pattern.{ first_pattern = pat'
-                       ; rest_patterns = []
-                       ; action = 0 }
-             ]
-           in
-           begin match Pattern.decision_tree_of_matrix st.typedefs matrix with
-           | Some tree ->
-              term_of_expr st body >>| fun body ->
-              let body = term_of_pattern st (Term.Var reg) body pat in
-              Term.Lam(reg, Term.Case([Term.Var reg], tree, [|body|]))
-           | None -> Error (Sequence.return (Message.Unreachable))
-           end) st (Hashtbl.create (module String))
+    | Ast.Lam((_, patterns, _) as case, cases) ->
+       let reg = fresh_register st in
+       let regs = List.map ~f:(fun _ -> fresh_register st) patterns in
+       let handle_branch idx (pattern, patterns, expr) =
+         with_registers (fun st ->
+             let temp_reg = fresh_register st in
+             pattern_of_ast_pattern st temp_reg pattern >>= fun pattern ->
+             List.fold_right ~f:(fun pattern acc ->
+                 acc >>= fun list ->
+                 let reg = fresh_register st in
+                 pattern_of_ast_pattern st reg pattern >>| fun pattern ->
+                 pattern::list
+               ) ~init:(Ok []) patterns >>= fun patterns ->
+             let row =
+               Pattern.{ first_pattern = pattern_t_of_pattern pattern
+                       ; rest_patterns =
+                           List.map ~f:pattern_t_of_pattern patterns
+                       ; action = idx }
+             in
+             let term =
+               let rec f regs patterns =
+                 match (regs, patterns) with
+                 | [], [] -> term_of_expr st expr
+                 | ([], _::_) | (_::_, []) ->
+                    Error (Sequence.return Message.Mismatched_arity)
+                 | (reg::regs, pat::pats) ->
+                    f regs pats >>| fun cont ->
+                    term_of_pattern st (Term.Var reg) cont pat
+               in f (reg::regs) (pattern::patterns)
+             in term >>| fun term -> (row, term)
+           ) st (Hashtbl.create (module String))
+       in
+       let branches_result =
+         List.fold_right ~f:(fun branch acc ->
+             acc >>= fun (i, rows, terms) ->
+             handle_branch i branch >>| fun (row, term) ->
+             (i + 1, row::rows, term::terms)
+           ) ~init:(Ok (0, [], [])) (case::cases)
+       in
+       branches_result >>= fun (_, matrix, branches) ->
+       begin match Pattern.decision_tree_of_matrix st.typedefs matrix with
+       | Some tree ->
+          let case_term =
+            Term.Case( List.map ~f:(fun reg -> Term.Var reg) (reg::regs)
+                     , tree
+                     , Array.of_list branches )
+          in
+          let rec f cont = function
+            | [] -> cont
+            | (reg::regs) -> Term.Lam(reg, f cont regs)
+          in Ok (f case_term (reg::regs))
+       | None -> Error (Sequence.return Message.Unreachable)
+       end
 
     | Ast.Let(bindings, body) ->
        let rec f = function

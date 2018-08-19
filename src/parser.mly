@@ -41,8 +41,8 @@ expr_kw:
   | CASE test = expr WITH option(BAR) cases = separated_list(BAR, case) {
         (($symbolstartpos, $endpos), Ast.Case(test, cases))
       }
-  | FUN pattern ARROW expr {
-        (($symbolstartpos, $endpos), Ast.Lam($2, $4))
+  | FUN option(BAR) lambda_case separated_list(BAR, lambda_case) {
+        (($symbolstartpos, $endpos), Ast.Lam($3, $4))
       }
   | LET bindings = separated_list(AND, binding) IN body = expr {
         (($symbolstartpos, $endpos), Ast.Let(bindings, body))
@@ -55,6 +55,10 @@ expr_kw:
 
 case:
   | pattern ARROW expr { ($1, $3) }
+  ;
+
+lambda_case:
+  | pattern list(pattern) ARROW expr { ($1, $2, $4) }
   ;
 
 binding:
@@ -76,9 +80,14 @@ expr_atom:
   ;
 
 pattern:
-  | typename = IDENT COLONCOLON con = IDENT args = list(pattern) {
+  | typename = IDENT COLONCOLON con = IDENT {
+        (($symbolstartpos, $endpos), Ast.Con(Ident.Local typename, con, []))
+      }
+  | LPARENS
+      typename = IDENT COLONCOLON con = IDENT arg = pattern args = list(pattern)
+    RPARENS {
         (($symbolstartpos, $endpos)
-        , Ast.Con(Ident.Local typename, con, args))
+        , Ast.Con(Ident.Local typename, con, arg::args))
       }
   | IDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
   | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }
