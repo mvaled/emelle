@@ -95,6 +95,8 @@ let rec term_of_expr st (ann, node) =
 
     | Ast.Case(test, cases) ->
        term_of_expr st test >>= fun test ->
+       let reg = fresh_register st in
+       let reg_var = Term.Var reg in
        let result =
          List.fold_right
            ~f:(fun (pat, expr) acc ->
@@ -103,7 +105,7 @@ let rec term_of_expr st (ann, node) =
                  let reg = fresh_register st in
                  pattern_of_ast_pattern st reg pat >>= fun pat ->
                  term_of_expr st expr >>| fun body ->
-                 let pat_term = term_of_pattern st test body pat in
+                 let pat_term = term_of_pattern st reg_var body pat in
                  let pat = pattern_t_of_pattern pat in
                  ((i + 1)
                  , Pattern.{ first_pattern = pat
@@ -117,7 +119,8 @@ let rec term_of_expr st (ann, node) =
        result >>= fun (_, rows, branches) ->
        let branches = Array.of_list branches in
        begin match Pattern.decision_tree_of_matrix st.typedefs rows with
-       | Some tree -> Ok (Term.Case([test], tree, branches))
+       | Some tree ->
+          Ok (Term.Let(reg, test, (Term.Case([reg_var], tree, branches))))
        | None -> Error (Sequence.return (Message.Unreachable))
        end
 
