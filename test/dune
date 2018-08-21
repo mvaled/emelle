@@ -1,3 +1,4 @@
 (tests
-  (names test_syntax test_type)
-  (libraries base emelle))
+  (names test_integration test_syntax test_type)
+  (libraries base emelle)
+  (preprocess (pps ppx_jane)))

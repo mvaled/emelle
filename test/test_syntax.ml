@@ -16,7 +16,7 @@ let test_invalid parse =
         assert false
       with
       | Parser.Error -> ()
-      | Lexer.Lexer_error _ -> ()
+      | Lexer.Error _ -> ()
       | exn -> raise exn
     )
 

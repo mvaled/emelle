@@ -2,7 +2,7 @@
   open Base
   open Parser
 
-  exception Lexer_error of string
+  exception Error of string
 
   let keywords =
     Hashtbl.of_alist_exn
@@ -47,7 +47,7 @@ rule expr = parse
       | None -> IDENT str
     }
   | eof { EOF }
-  | _ { raise (Lexer_error (Lexing.lexeme lexbuf)) }
+  | _ { raise (Error (Lexing.lexeme lexbuf)) }
 
 {
 }
