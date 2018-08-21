@@ -1,7 +1,26 @@
 open Base
 open Emelle
 
-let valid =
+let test_valid parse =
+  List.iter ~f:(
+      fun program ->
+      let _ = parse Lexer.expr (Lexing.from_string program) in
+      ()
+    )
+
+let test_invalid parse =
+  List.iter ~f:(
+      fun program ->
+      try
+        let _ = parse Lexer.expr (Lexing.from_string program) in
+        assert false
+      with
+      | Parser.Error -> ()
+      | Lexer.Lexer_error _ -> ()
+      | exn -> raise exn
+    )
+
+let valid_exprs =
   [ "f x"
   ; "let x = y in x"
   ; "fun x y -> y"
@@ -13,26 +32,41 @@ let valid =
   ; "fun x -> x | y -> y"
   ; "  fun   |x -> x | y  -> y" ]
 
-let invalid =
+let invalid_exprs =
   [ "fun"
   ; "case"
   ; "fun (some x) -> x"
   ; "fun -> x" ]
 
-let () =
-  List.iter ~f:(
-      fun program ->
-      let _ = Parser.file Lexer.expr (Lexing.from_string program) in
-      ()
-    ) valid
+let valid_monotypes =
+  [ "a -> b"
+  ; "(->) a"
+  ; "(->)"
+  ; "(->) a b"
+  ; "a b c"
+  ; "(a -> b) -> f a -> f b"
+  ; "m a -> (a -> m b) -> m b"
+  ; "Option a"
+  ; "Either a b"
+  ; "Either Foo Bar"
+  ; "IO Unit"
+  ; "Unit"
+  ; "a' b' c'"
+  ]
+
+let invalid_monotypes =
+  [ "->"
+  ; "a ->"
+  ; "123 a"
+  ; "case"
+  ; "with"
+  ; "forall"
+  ; "forall a . a"
+  ; "fun x -> x"
+  ]
 
 let () =
-  List.iter ~f:(
-      fun program ->
-      try
-        let _ = Parser.file Lexer.expr (Lexing.from_string program) in
-        assert false
-      with
-      | Parser.Error -> ()
-      | exn -> raise exn
-    ) invalid
+  test_valid Parser.expr_eof valid_exprs;
+  test_invalid Parser.expr_eof invalid_exprs;
+  test_valid Parser.monotype_eof valid_monotypes;
+  test_invalid Parser.monotype_eof invalid_monotypes

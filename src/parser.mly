@@ -4,6 +4,7 @@
 %token AND
 %token CASE
 %token ELSE
+%token FORALL
 %token FUN
 %token IF
 %token IN
@@ -20,6 +21,7 @@
 %token COLON
 %token COLONCOLON
 %token COMMA
+%token DOT
 %token EQUALS
 %token UNDERSCORE
 
@@ -28,10 +30,32 @@
 %token EOF
 
 %start <(Lexing.position * Lexing.position) Ast.expr> file
+%start <(Lexing.position * Lexing.position) Ast.expr> expr_eof
+%start <Ast.monotype> monotype_eof
 
 %%
 
 file: expr EOF { $1 };
+expr_eof: expr EOF { $1 };
+monotype_eof: monotype EOF { $1 };
+
+polytype: FORALL list(IDENT) DOT monotype { Ast.Forall($2, $4) };
+
+monotype:
+  | monotype_app ARROW monotype { Ast.TApp(Ast.TApp(Ast.TArrow, $1), $3) }
+  | monotype_app { $1 }
+  ;
+
+monotype_app:
+  | monotype_app monotype_atom { Ast.TApp($1, $2) }
+  | monotype_atom { $1 }
+  ;
+
+monotype_atom:
+  | IDENT { Ast.TVar (Ident.Local $1) }
+  | LPARENS ARROW RPARENS { Ast.TArrow }
+  | LPARENS monotype RPARENS { $2 }
+  ;
 
 expr:
   | expr_kw { $1 }

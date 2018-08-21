@@ -1,13 +1,13 @@
 open Base
 
+type monotype =
+  | TApp of monotype * monotype
+  | TArrow
+  | TFloat
+  | TInt
+  | TVar of Ident.t
+
 type polytype = Forall of string list * monotype
-and monotype =
-  | App of monotype * monotype
-  | Arrow
-  | Float
-  | Int
-  | Rank of polytype
-  | Var of Ident.t
 
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =

@@ -5,19 +5,20 @@
   exception Lexer_error of string
 
   let keywords =
-    Hashtbl.of_alist_exn (module String) [
-        ("and", AND);
-        ("case", CASE);
-        ("else", ELSE);
-        ("fun", FUN);
-        ("if", IF);
-        ("in", IN);
-        ("let", LET);
-        ("rec", REC);
-        ("then", THEN);
-        ("type", TYPE);
-        ("with", WITH)
-      ]
+    Hashtbl.of_alist_exn
+      (module String)
+      [ ("and", AND)
+      ; ("case", CASE)
+      ; ("else", ELSE)
+      ; ("forall", FORALL)
+      ; ("fun", FUN)
+      ; ("if", IF)
+      ; ("in", IN)
+      ; ("let", LET)
+      ; ("rec", REC)
+      ; ("then", THEN)
+      ; ("type", TYPE)
+      ; ("with", WITH) ]
 }
 
 let whitespace = [' ' '\t']
@@ -37,6 +38,7 @@ rule expr = parse
   | ':' { COLON }
   | "::" { COLONCOLON }
   | ',' { COMMA }
+  | '.' { DOT }
   | '=' { EQUALS }
   | '_' { UNDERSCORE }
   | ident as str {
