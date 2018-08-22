@@ -53,10 +53,12 @@ let asts =
     (optionally (fun str -> Parser.file Lexer.expr (Lexing.from_string str)))
     Syntax tests
 
-let desugarer =
-  Desugar.{ vargen = 0
-          ; registers = Env.create (Hashtbl.create (module String))
-          ; typedefs = Env.create (Hashtbl.create (module Ident)) }
+let desugar expr =
+  let desugarer =
+    Desugar.{ vargen = 0
+            ; registers = Env.create (Hashtbl.create (module String))
+            ; typedefs = Env.create (Hashtbl.create (module Ident)) }
+  in Desugar.term_of_expr desugarer expr
 
 let terms =
-  test (Desugar.term_of_expr desugarer) Desugar asts
+  test desugar Desugar asts
