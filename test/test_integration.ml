@@ -38,9 +38,14 @@ let tests =
     ; "with", Syntax
     ; "fun (some x) -> x", Syntax
     ; "fun -> x", Syntax
+    ; "f", Desugar
     ; "f x", Desugar
     ; "fun x -> y", Desugar
     ; "case x with | y -> y", Desugar
+    ; "let f = fun x -> f x in f", Desugar
+    ; "case x with | x -> y | y -> x", Desugar
+    ; "let rec f = fun x -> f x in f", End
+    ; "case fun x -> x with | x -> x | y -> y", End
     ; "fun x -> x", End
     ; "fun x -> fun y -> x", End
     ; "fun x y -> x", End
