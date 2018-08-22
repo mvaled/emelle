@@ -43,7 +43,7 @@ let tests =
     ; "fun x -> y", Desugar
     ; "case x with | y -> y", Desugar
     ; "let f = fun x -> f x in f", Desugar
-    ; "case x with | x -> y | y -> x", Desugar
+    ; "case fun x -> x with | x -> x | y -> x", Desugar
     ; "let rec f = fun x -> f x in f", End
     ; "case fun x -> x with | x -> x | y -> y", End
     ; "fun x -> x", End
