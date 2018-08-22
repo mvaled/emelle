@@ -35,24 +35,32 @@ let idx_of_constr st typename con =
   | Some (Alias _) -> Error (Sequence.return (Message.Expected_adt typename))
   | None -> Error (Sequence.return (Message.Unresolved_type typename))
 
-let rec pattern_of_ast_pattern st reg (ann, node) =
+(** Convert a pattern from the AST representation to the representation defined
+    in this module, returning errors when constructors or types aren't defined.
+
+    This function is parameterized over Hashtbl.t, the hash table to store the
+    string-to-register mappings in, instead of using the state's [registers]
+    member, because there are some cases in which the register definitions
+    should be stored in another hashtbl. *)
+let rec pattern_of_ast_pattern st hashtbl reg (ann, node) =
   let open Result.Monad_infix in
   let pat = match node with
     | Ast.Con(typename, con, pats) ->
        let f next acc =
          acc >>= fun pats ->
          let reg = fresh_register st in
-         pattern_of_ast_pattern st reg next >>| fun pat ->
+         pattern_of_ast_pattern st hashtbl reg next >>| fun pat ->
          pat::pats
        in
        idx_of_constr st typename con >>= fun idx ->
        List.fold_right ~f:f ~init:(Ok []) pats >>| fun patterns ->
        (Con(typename, idx, patterns), reg)
     | Ast.Var id ->
-       if Env.define st.registers id reg then
-         Ok (As((Wild, reg), id), reg)
-       else
-         Error (Sequence.return (Message.Redefined_id (Ident.Local id)))
+       begin match Hashtbl.add ~key:id ~data:reg hashtbl with
+       | `Ok -> Ok (As((Wild, reg), id), reg)
+       | `Duplicate ->
+          Error (Sequence.return (Message.Redefined_id (Ident.Local id)))
+       end
     | Ast.Wild -> Ok (Wild, reg)
   in pat >>| fun pat -> (Ann(ann, pat), reg)
 
@@ -103,7 +111,8 @@ let rec term_of_expr st (ann, node) =
              acc >>= fun (i, pats, terms) ->
              with_registers (fun _ ->
                  let reg = fresh_register st in
-                 pattern_of_ast_pattern st reg pat >>= fun pat ->
+                 let hashtbl = Env.table st.registers in
+                 pattern_of_ast_pattern st hashtbl reg pat >>= fun pat ->
                  term_of_expr st expr >>| fun body ->
                  let pat_term = term_of_pattern st reg_var body pat in
                  let pat = pattern_t_of_pattern pat in
@@ -130,11 +139,12 @@ let rec term_of_expr st (ann, node) =
        let handle_branch idx (pattern, patterns, expr) =
          with_registers (fun st ->
              let temp_reg = fresh_register st in
-             pattern_of_ast_pattern st temp_reg pattern >>= fun pattern ->
+             let tbl = Env.table st.registers in
+             pattern_of_ast_pattern st tbl temp_reg pattern >>= fun pattern ->
              List.fold_right ~f:(fun pattern acc ->
                  acc >>= fun list ->
                  let reg = fresh_register st in
-                 pattern_of_ast_pattern st reg pattern >>| fun pattern ->
+                 pattern_of_ast_pattern st tbl reg pattern >>| fun pattern ->
                  pattern::list
                ) ~init:(Ok []) patterns >>= fun patterns ->
              let row =
@@ -179,12 +189,13 @@ let rec term_of_expr st (ann, node) =
        end
 
     | Ast.Let(bindings, body) ->
+       let new_bindings = Hashtbl.create (module String) in
        let rec f = function
-         | [] -> term_of_expr st body
+         | [] -> with_registers (fun _ -> term_of_expr st body) st new_bindings
          | (pat, def)::xs ->
             term_of_expr st def >>= fun def ->
             let reg = fresh_register st in
-            pattern_of_ast_pattern st reg pat >>= fun pat ->
+            pattern_of_ast_pattern st new_bindings reg pat >>= fun pat ->
             let pat' = pattern_t_of_pattern pat in
             let matrix = [ Pattern.{ first_pattern = pat'
                                    ; rest_patterns = []
@@ -196,8 +207,7 @@ let rec term_of_expr st (ann, node) =
                let term = term_of_pattern st def cont pat in
                Term.Case([def], tree, [|term|])
             | None -> Error (Sequence.return Message.Unreachable)
-       in
-       with_registers (fun _ -> f bindings) st (Hashtbl.create (module String))
+       in f bindings
 
     | Ast.Let_rec(bindings, body) ->
        let hashtbl = Hashtbl.create (module String) in
