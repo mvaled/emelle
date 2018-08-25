@@ -30,11 +30,7 @@ let idx_of_constr st typename con =
 
 (** Convert a pattern from the AST representation to the representation defined
     in this module, returning errors when constructors or types aren't defined.
-
-    This function is parameterized over Hashtbl.t, the hash table to store the
-    string-to-register mappings in, instead of using the state's [registers]
-    member, because there are some cases in which the register definitions
-    should be stored in another hashtbl. *)
+ *)
 let rec pattern_of_ast_pattern st env reg (ann, node) =
   let open Result.Monad_infix in
   let result = match node with
