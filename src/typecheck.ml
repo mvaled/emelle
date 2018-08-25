@@ -1,11 +1,10 @@
 open Base
 
-type t = {
-    types : (Ident.t, Type.adt) Hashtbl.t;
-    mutable env : (int, Type.t) Hashtbl.t;
-    mutable level : int;
-    mutable vargen : int;
-  }
+type t =
+  { types : (Ident.t, Type.adt) Hashtbl.t
+  ; mutable env : (int, Type.t) Hashtbl.t
+  ; mutable level : int
+  ; mutable vargen : int }
 
 let rec kind_of_type checker =
   let open Result.Monad_infix in
@@ -57,7 +56,7 @@ let rec occurs (uvar : Type.UVar.t) = function
 
 (** Unify two types, returning the unification errors *)
 let rec unify checker lhs rhs =
-  if not (phys_equal lhs rhs) then
+  if phys_equal lhs rhs then
     Sequence.empty
   else
     match lhs, rhs with
