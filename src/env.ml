@@ -1,57 +1,27 @@
 open Base
 
-module Basic = struct
-  (** A generic type representing a symbol table with scoped name shadowing
+(** A map with scoped name shadowing *)
+type ('k, +'v, 'cmp) t =
+  { curr : ('k, 'v, 'cmp) Map.t
+  ; parents : ('k, 'v, 'cmp) Map.t }
 
-      This type has field tables of type 'a as opposed to field table of type
-      [('a, 'b) Hashtbl.t] for some other type variable 'b so that the type can
-      hold multiple tables. This is also why [find] is parameterized with a
-      function from env to Hashtbl.t and [define] is parameterized with a
-      [Hashtbl.t]
-   *)
-  type 'a t = {
-      tables : 'a;
-      parent : 'a t option
-    }
+let empty cmp =
+  { curr = Map.empty cmp
+  ; parents = Map.empty cmp }
 
-  let create a = {
-      tables = a;
-      parent = None
-    }
+let in_scope f env =
+  let combine ~key:_ x _ = x in
+  let env' =
+    { curr = Map.empty (Map.comparator_s env.curr)
+    ; parents = Map.merge_skewed env.curr env.parents ~combine:combine }
+  in f env'
 
-  let extend a parent = {
-      tables = a;
-      parent = Some parent
-    }
+let find env key =
+  match Map.find env.curr key with
+  | Some x -> Some x
+  | None -> Map.find env.parents key
 
-  let tables env = env.tables
-
-  let rec find f env id =
-    match Hashtbl.find (f env) id with
-    | Some def -> Some def
-    | None ->
-       match env.parent with
-       | Some parent -> find f parent id
-       | None -> None
-
-  let define tbl id def =
-    match Hashtbl.add tbl ~key:id ~data:def with
-    | `Ok -> true
-    | `Duplicate -> false
-end
-
-(** A hash table with scoped name shadowing *)
-type ('a, 'b) t = ('a, 'b) Hashtbl.t Basic.t
-
-let create = Basic.create
-
-let extend = Basic.extend
-
-let table = Basic.tables
-
-(* The [env] parameter can't be point-free'd out because of the value
-   restriction
- *)
-let find env = Basic.find table env
-
-let define env = Basic.define env.Basic.tables
+let add env key value =
+  match Map.add env.curr ~key:key ~data:value with
+  | `Ok x -> Some { env with curr = x }
+  | `Duplicate -> None

@@ -1,10 +1,8 @@
 open Base
 
-type t = {
-    mutable vargen : int;
-    mutable registers : (string, int) Env.t;
-    typedefs : (Ident.t, Type.def) Env.t;
-  }
+type 'cmp t =
+  { mutable vargen : int
+  ; typedefs : (Ident.t, Type.def, 'cmp) Env.t }
 
 (* Tag pattern with register *)
 type 'a pattern = 'a pattern' * int
@@ -18,15 +16,10 @@ let fresh_register st =
   st.vargen <- st.vargen + 1;
   st.vargen - 1
 
-let with_registers f st tbl =
-  let old = st.registers in
-  st.registers <- Env.extend tbl st.registers;
-  let result = f st in
-  st.registers <- old;
-  result
+let find_typedef st typename = Env.find st.typedefs typename
 
 let idx_of_constr st typename con =
-  match Env.find st.typedefs typename with
+  match find_typedef st typename with
   | Some (Algebraic adt) ->
      begin match Hashtbl.find adt.constr_names con with
      | Some idx -> Ok idx
@@ -42,27 +35,27 @@ let idx_of_constr st typename con =
     string-to-register mappings in, instead of using the state's [registers]
     member, because there are some cases in which the register definitions
     should be stored in another hashtbl. *)
-let rec pattern_of_ast_pattern st hashtbl reg (ann, node) =
+let rec pattern_of_ast_pattern st env reg (ann, node) =
   let open Result.Monad_infix in
-  let pat = match node with
+  let result = match node with
     | Ast.Con(typename, con, pats) ->
        let f next acc =
-         acc >>= fun pats ->
+         acc >>= fun (pats, env) ->
          let reg = fresh_register st in
-         pattern_of_ast_pattern st hashtbl reg next >>| fun pat ->
-         pat::pats
+         pattern_of_ast_pattern st env reg next >>| fun (pat, env) ->
+         (pat::pats, env)
        in
        idx_of_constr st typename con >>= fun idx ->
-       List.fold_right ~f:f ~init:(Ok []) pats >>| fun patterns ->
-       (Con(typename, idx, patterns), reg)
+       List.fold_right ~f:f ~init:(Ok ([], env)) pats >>| fun (pats, env) ->
+       ((Con(typename, idx, pats), reg), env)
     | Ast.Var id ->
-       begin match Hashtbl.add ~key:id ~data:reg hashtbl with
-       | `Ok -> Ok (As((Wild, reg), id), reg)
-       | `Duplicate ->
+       begin match Env.add env id reg with
+       | Some env -> Ok ((As((Wild, reg), id), reg), env)
+       | None ->
           Error (Sequence.return (Message.Redefined_id (Ident.Local id)))
        end
-    | Ast.Wild -> Ok (Wild, reg)
-  in pat >>| fun pat -> (Ann(ann, pat), reg)
+    | Ast.Wild -> Ok ((Wild, reg), env)
+  in result >>| fun (pat, env) -> ((Ann(ann, pat), reg), env)
 
 (** Compile the pattern from the representation defined in this module to the
     one defined in the Pattern module *)
@@ -78,7 +71,7 @@ let rec pattern_t_of_pattern (pat, _) =
 let rec term_of_pattern st def cont (node, reg) =
   match node with
   | Ann(ann, pat) ->
-     Term.Ann {ann = ann; term = term_of_pattern st def cont pat}
+     Term.Ann { ann = ann; term = term_of_pattern st def cont pat }
   | As(pat, _) -> term_of_pattern st def cont pat
   | Con(typename, constr_idx, pats) ->
      let rec f i = function
@@ -90,30 +83,29 @@ let rec term_of_pattern st def cont (node, reg) =
      in f 0 pats
   | Wild -> Term.Let(reg, def, cont)
 
-let rec term_of_expr st (ann, node) =
+let rec term_of_expr st env (ann, node) =
   let open Result.Monad_infix in
   let term =
     match node with
     | Ast.App(f, x) ->
-       begin match term_of_expr st f, term_of_expr st x with
+       begin match term_of_expr st env f, term_of_expr st env x with
        | Ok f, Ok x -> Ok (Term.App(f, x))
        | (Error e, Ok _) | (Ok _, Error e) -> Error e
        | Error e1, Error e2 -> Error (Sequence.append e1 e2)
        end
 
     | Ast.Case(test, cases) ->
-       term_of_expr st test >>= fun test ->
+       term_of_expr st env test >>= fun test ->
        let reg = fresh_register st in
        let reg_var = Term.Var reg in
        let result =
          List.fold_right
            ~f:(fun (pat, expr) acc ->
              acc >>= fun (i, pats, terms) ->
-             with_registers (fun _ ->
+             Env.in_scope (fun env ->
                  let reg = fresh_register st in
-                 let hashtbl = Env.table st.registers in
-                 pattern_of_ast_pattern st hashtbl reg pat >>= fun pat ->
-                 term_of_expr st expr >>| fun body ->
+                 pattern_of_ast_pattern st env reg pat >>= fun (pat, env) ->
+                 term_of_expr st env expr >>| fun body ->
                  let pat_term = term_of_pattern st reg_var body pat in
                  let pat = pattern_t_of_pattern pat in
                  ( (i + 1)
@@ -121,7 +113,7 @@ let rec term_of_expr st (ann, node) =
                            ; rest_patterns = []
                            ; action = i }::pats
                  , pat_term::terms )
-               ) st (Hashtbl.create (module String)))
+               ) env)
            ~init:(Ok (0, [], []))
            cases
        in
@@ -136,35 +128,33 @@ let rec term_of_expr st (ann, node) =
     | Ast.Lam((_, patterns, _) as case, cases) ->
        let reg = fresh_register st in
        let regs = List.map ~f:(fun _ -> fresh_register st) patterns in
-       let handle_branch idx (pattern, patterns, expr) =
-         with_registers (fun st ->
-             let temp_reg = fresh_register st in
-             let tbl = Env.table st.registers in
-             pattern_of_ast_pattern st tbl temp_reg pattern >>= fun pattern ->
-             List.fold_right ~f:(fun pattern acc ->
-                 acc >>= fun list ->
+       let handle_branch idx (pat, pats, expr) =
+         Env.in_scope (fun env ->
+             let tmp_reg = fresh_register st in
+             pattern_of_ast_pattern st env tmp_reg pat >>= fun (pat, env) ->
+             List.fold_right ~f:(fun pat acc ->
+                 acc >>= fun (list, env) ->
                  let reg = fresh_register st in
-                 pattern_of_ast_pattern st tbl reg pattern >>| fun pattern ->
-                 pattern::list
-               ) ~init:(Ok []) patterns >>= fun patterns ->
+                 pattern_of_ast_pattern st env reg pat >>| fun (pat, env) ->
+                 (pat::list, env)
+               ) ~init:(Ok ([], env)) pats >>= fun (pats, env) ->
              let row =
-               Pattern.{ first_pattern = pattern_t_of_pattern pattern
-                       ; rest_patterns =
-                           List.map ~f:pattern_t_of_pattern patterns
+               Pattern.{ first_pattern = pattern_t_of_pattern pat
+                       ; rest_patterns = List.map ~f:pattern_t_of_pattern pats
                        ; action = idx }
              in
              let term =
                let rec f regs patterns =
                  match (regs, patterns) with
-                 | [], [] -> term_of_expr st expr
+                 | [], [] -> term_of_expr st env expr
                  | ([], _::_) | (_::_, []) ->
                     Error (Sequence.return Message.Mismatched_arity)
                  | (reg::regs, pat::pats) ->
                     f regs pats >>| fun cont ->
                     term_of_pattern st (Term.Var reg) cont pat
-               in f (reg::regs) (pattern::patterns)
+               in f (reg::regs) (pat::pats)
              in term >>| fun term -> (row, term)
-           ) st (Hashtbl.create (module String))
+           ) env
        in
        let branches_result =
          List.fold_right ~f:(fun branch acc ->
@@ -189,13 +179,12 @@ let rec term_of_expr st (ann, node) =
        end
 
     | Ast.Let(bindings, body) ->
-       let new_bindings = Hashtbl.create (module String) in
-       let rec f = function
-         | [] -> with_registers (fun _ -> term_of_expr st body) st new_bindings
+       let rec f env' = function
+         | [] -> Env.in_scope (fun env -> term_of_expr st env body) env'
          | (pat, def)::xs ->
-            term_of_expr st def >>= fun def ->
+            term_of_expr st env def >>= fun def ->
             let reg = fresh_register st in
-            pattern_of_ast_pattern st new_bindings reg pat >>= fun pat ->
+            pattern_of_ast_pattern st env' reg pat >>= fun (pat, env') ->
             let pat' = pattern_t_of_pattern pat in
             let matrix = [ Pattern.{ first_pattern = pat'
                                    ; rest_patterns = []
@@ -203,38 +192,41 @@ let rec term_of_expr st (ann, node) =
             in
             match Pattern.decision_tree_of_matrix st.typedefs matrix with
             | Some tree ->
-               f xs >>| fun cont ->
+               f env' xs >>| fun cont ->
                let term = term_of_pattern st def cont pat in
                Term.Case([def], tree, [|term|])
             | None -> Error (Sequence.return Message.Unreachable)
-       in f bindings
+       in f env bindings
 
     | Ast.Let_rec(bindings, body) ->
-       let hashtbl = Hashtbl.create (module String) in
        let bindings =
-         List.map ~f:(fun (str, expr) ->
+         List.fold_right ~f:(fun (str, expr) acc ->
+             acc >>= fun (list, env) ->
              let reg = fresh_register st in
-             Hashtbl.add_exn hashtbl ~key:str ~data:reg;
-             (reg, expr)
-           ) bindings;
+             match Env.add env str reg with
+             | Some env -> Ok ((reg, expr)::list, env)
+             | None ->
+                Error (Sequence.return (Message.Redefined_id (Ident.Local str)))
+           ) ~init:(Ok ([], env)) bindings;
        in
-       with_registers (fun st ->
+       bindings >>= fun (bindings, env) ->
+       Env.in_scope (fun env ->
            let bindings =
              List.fold_right ~f:(fun (reg, expr) acc ->
                  acc >>= fun list ->
-                 term_of_expr st expr >>| fun term ->
+                 term_of_expr st env expr >>| fun term ->
                  (reg, term)::list
                ) ~init:(Ok []) bindings
            in
            bindings >>= fun bindings ->
-           term_of_expr st body >>| fun body ->
+           term_of_expr st env body >>| fun body ->
            Term.Let_rec(bindings, body)
-         ) st hashtbl
+         ) env
 
     | Ast.Var id ->
        begin match id with
        | Local str ->
-          begin match Env.find st.registers str with
+          begin match Env.find env str with
           | Some reg -> Ok (Term.Var reg)
           | None -> Error (Sequence.return (Message.Unresolved_id id))
           end

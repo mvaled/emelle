@@ -63,11 +63,11 @@ let asts =
     Syntax tests
 
 let desugar expr =
+  let env = Env.empty (module String) in
   let desugarer =
     Desugar.{ vargen = 0
-            ; registers = Env.create (Hashtbl.create (module String))
-            ; typedefs = Env.create (Hashtbl.create (module Ident)) }
-  in Desugar.term_of_expr desugarer expr
+            ; typedefs = Env.empty (module Ident) }
+  in Desugar.term_of_expr desugarer env expr
 
 let terms =
   test desugar Desugar asts
