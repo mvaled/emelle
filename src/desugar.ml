@@ -2,7 +2,7 @@ open Base
 
 type 'cmp t =
   { mutable vargen : int
-  ; typedefs : (Ident.t, Type.def, 'cmp) Env.t }
+  ; typedefs : (Ident.t, Type.adt, 'cmp) Env.t }
 
 (* Tag pattern with register *)
 type 'a pattern = 'a pattern' * int
@@ -20,12 +20,11 @@ let find_typedef st typename = Env.find st.typedefs typename
 
 let idx_of_constr st typename con =
   match find_typedef st typename with
-  | Some (Algebraic adt) ->
+  | Some adt ->
      begin match Hashtbl.find adt.constr_names con with
      | Some idx -> Ok idx
      | None -> Error (Sequence.return (Message.Unknown_constr(typename, con)))
      end
-  | Some (Alias _) -> Error (Sequence.return (Message.Expected_adt typename))
   | None -> Error (Sequence.return (Message.Unresolved_type typename))
 
 (** Convert a pattern from the AST representation to the representation defined

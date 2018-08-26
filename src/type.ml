@@ -42,15 +42,10 @@ and var =
   | Unassigned of UVar.t
   | Assigned of t
 
-type adt = {
-    typeparams: UVar.t list;
-    constr_names: (string, int) Hashtbl.t;
-    constrs: (string * t array) array;
-  }
-
-type def =
-  | Algebraic of adt
-  | Alias of t
+type adt =
+  { typeparams: UVar.t list
+  ; constr_names: (string, int) Hashtbl.t
+  ; constrs: (string * t array) array }
 
 let equal_prim x y = (compare_prim x y) = 0
 

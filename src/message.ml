@@ -1,7 +1,6 @@
 open Base
 
 type error =
-  | Expected_adt of Ident.t
   | Lexer_error of string
   | Mismatched_arity
   | Mismatched_kinds

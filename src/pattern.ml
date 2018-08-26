@@ -10,11 +10,10 @@ type decision_tree =
   | Switch of (int, decision_tree) Hashtbl.t
   | Swap of int * decision_tree
 
-type row = {
-    first_pattern : t;
-    rest_patterns : t list;
-    action : int;
-  }
+type row =
+  { first_pattern : t
+  ; rest_patterns : t list
+  ; action : int }
 
 (** Contract: All rows in the matrix have the same length *)
 type matrix = row list
@@ -46,12 +45,12 @@ let swap_column idx =
         )
     ) ~init:(Some [])
 
-let find_type ty =
+let find_typename pats =
     let rec f i = function
       | [] -> None
-      | Con(typename, _, _)::_ -> Some ((Type.Nominal typename), i)
+      | Con(typename, _, _)::_ -> Some (typename, i)
       | Wild::xs -> f (i + 1) xs
-    in f 0 ty
+    in f 0 pats
 
 (** Specialize operation as described in Compiling Pattern Matching to Good
     Decision Trees *)
@@ -91,41 +90,36 @@ let default_matrix
 let rec decision_tree_of_matrix env = function
   | [] -> Some Fail (* Case 1 *)
   | (row::_) as rows ->
-     match find_type (row.first_pattern::row.rest_patterns) with
+     match find_typename (row.first_pattern::row.rest_patterns) with
      | None -> Some (Leaf row.action) (* Case 2 *)
-     | Some (ty, i) ->
+     | Some (typename, i) ->
         (* Case 3 *)
-        let rec handle_type = function
-          | Type.Nominal typename ->
-             begin match Env.find env typename with
-             | None -> None
-             | Some (Type.Alias ty) -> handle_type ty
-             | Some (Type.Algebraic alg) ->
-                let jump_tbl = Hashtbl.create (module Int) in
-                let default = default_matrix rows in
-                let result =
-                  Array.foldi ~f:(fun id acc (_, products) ->
-                      if acc then
-                        let matrix =
-                          match specialize id (Array.length products) rows with
-                          | [] -> default
-                          | matrix -> matrix
-                        in
-                        match decision_tree_of_matrix env matrix with
-                        | Some tree ->
-                           Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
-                           true
-                        | None -> false
-                      else
-                        false) alg.constrs ~init:true
-                in
-                if result then
-                  if i = 0 then
-                    Some (Switch jump_tbl)
-                  else
-                    Some (Swap (i, Switch jump_tbl))
-                else
-                  None
-             end
-          | _ -> None
-        in handle_type ty
+        begin match Env.find env typename with
+        | None -> None
+        | Some alg ->
+           let jump_tbl = Hashtbl.create (module Int) in
+           let default = default_matrix rows in
+           let result =
+             Array.foldi ~f:(fun id acc (_, products) ->
+                 if acc then
+                   let matrix =
+                     match specialize id (Array.length products) rows with
+                     | [] -> default
+                     | matrix -> matrix
+                   in
+                   match decision_tree_of_matrix env matrix with
+                   | Some tree ->
+                      Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
+                      true
+                   | None -> false
+                 else
+                   false) alg.Type.constrs ~init:true
+           in
+           if result then
+             if i = 0 then
+               Some (Switch jump_tbl)
+             else
+               Some (Swap (i, Switch jump_tbl))
+           else
+             None
+        end
