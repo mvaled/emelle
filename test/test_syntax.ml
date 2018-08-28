@@ -1,11 +1,13 @@
 open Base
 open Emelle
 
+exception Fail of string
+
 let test_valid parse =
   List.iter ~f:(
       fun program ->
-      let _ = parse Lexer.expr (Lexing.from_string program) in
-      ()
+      try let _ = parse Lexer.expr (Lexing.from_string program) in () with
+      | _ -> raise (Fail program)
     )
 
 let test_invalid parse =
@@ -65,8 +67,30 @@ let invalid_monotypes =
   ; "fun x -> x"
   ]
 
+let valid_adts =
+  [ "type Void ="
+  ; "type Void = |"
+  ; "type Unit = Unit"
+  ; "type Unit = | Unit"
+  ; "type Option a = Some a | None"
+  ; "type List a = | Cons a (List a) | Nil"
+  ; "type Bool = False | True"
+  ; "type Either e a = Left e | Right a"
+  ; "type StateT s m a = StateT s -> m (Product a s)"
+  ]
+
+let invalid_adts =
+  [ ""
+  ; "type = "
+  ; "type = Unit"
+  ; "type X = Y |"
+  ; "type TupleSyntaxNotSupported a b = Foo (a, b)"
+  ]
+
 let () =
   test_valid Parser.expr_eof valid_exprs;
   test_invalid Parser.expr_eof invalid_exprs;
   test_valid Parser.monotype_eof valid_monotypes;
-  test_invalid Parser.monotype_eof invalid_monotypes
+  test_invalid Parser.monotype_eof invalid_monotypes;
+  test_valid Parser.adt_eof valid_adts;
+  test_invalid Parser.adt_eof invalid_adts

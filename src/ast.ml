@@ -24,3 +24,8 @@ and 'a expr' =
   | Let_rec of (string * 'a expr) list * 'a expr
   | Var of Ident.t
 and 'a lambda_case = 'a pattern * 'a pattern list * 'a expr
+
+type adt =
+  { name : string
+  ; typeparams : string list
+  ; constrs : (string * monotype list) list }

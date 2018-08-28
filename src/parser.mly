@@ -32,12 +32,22 @@
 %start <(Lexing.position * Lexing.position) Ast.expr> file
 %start <(Lexing.position * Lexing.position) Ast.expr> expr_eof
 %start <Ast.monotype> monotype_eof
+%start <Ast.adt> adt_eof
 
 %%
 
 file: expr EOF { $1 };
 expr_eof: expr EOF { $1 };
 monotype_eof: monotype EOF { $1 };
+adt_eof: adt EOF { $1 }
+
+adt:
+  | TYPE IDENT list(IDENT) EQUALS option(BAR) separated_list(BAR, constr) {
+      Ast.{ name = $2; typeparams = $3; constrs = $6 }
+    }
+  ;
+
+constr: IDENT list(monotype) { ($1, $2) };
 
 polytype: FORALL list(IDENT) DOT monotype { Ast.Forall($2, $4) };
 
