@@ -23,12 +23,11 @@ module UVar = struct
     | Gen of int
   [@@deriving compare, hash, sexp]
 
-  type t = {
-      id : id;
-      kind : kind [@compare.ignore][@hash.ignore];
-      mutable level : int [@compare.ignore][@hash.ignore];
-      name : string option [@compare.ignore][@hash.ignore];
-    }
+  type t =
+    { id : id
+    ; kind : kind [@compare.ignore][@hash.ignore]
+    ; mutable level : int [@compare.ignore][@hash.ignore]
+    ; name : string option [@compare.ignore][@hash.ignore] }
   [@@deriving compare, hash, sexp]
 end
 
@@ -73,3 +72,6 @@ let type_of_constr ident adt constr =
   let output_ty =
     with_params (Nominal ident) (List.map ~f:of_uvar adt.typeparams)
   in curry (Array.to_list product) output_ty
+
+let kind_of_adt adt =
+  curry_kinds (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams) Mono

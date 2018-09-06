@@ -22,13 +22,10 @@ let rec kind_of_type checker =
        end
   | Type.Nominal id ->
      begin match Hashtbl.find checker.types id with
-     | Some adt ->
-        Ok (Type.curry_kinds
-              (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams)
-              Type.Mono)
+     | Some adt -> Ok (Type.kind_of_adt adt)
      | None -> Error (Sequence.return (Message.Unresolved_type id))
      end
-  | Type.Prim Type.Arrow -> Ok Type.Mono
+  | Type.Prim Type.Arrow -> Ok (Type.Poly(Type.Mono, Type.Mono))
   | Type.Prim Type.Float -> Ok Type.Mono
   | Type.Prim Type.Int -> Ok Type.Mono
   | Type.Var { contents = Type.Assigned ty } -> kind_of_type checker ty

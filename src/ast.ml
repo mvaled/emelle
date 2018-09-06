@@ -29,3 +29,7 @@ type adt =
   { name : string
   ; typeparams : string list
   ; constrs : (string * monotype list) list }
+
+type 'a file =
+  { adts : adt list list
+  ; expr : 'a expr }

@@ -9,12 +9,14 @@ let empty cmp =
   { curr = Map.empty cmp
   ; parents = Map.empty cmp }
 
-let in_scope f env =
+let in_scope_with f frame env =
   let combine ~key:_ x _ = x in
   let env' =
-    { curr = Map.empty (Map.comparator_s env.curr)
+    { curr = frame
     ; parents = Map.merge_skewed env.curr env.parents ~combine:combine }
   in f env'
+
+let in_scope f env = in_scope_with f (Map.empty (Map.comparator_s env.curr)) env
 
 let find env key =
   match Map.find env.curr key with
