@@ -4,52 +4,49 @@ type t =
   { types : (Ident.t, Type.adt) Hashtbl.t
   ; mutable env : (int, Type.t) Hashtbl.t
   ; mutable level : int
-  ; mutable vargen : int }
+  ; tvargen : Type.vargen
+  ; kvargen : Kind.vargen }
+
+let fresh_tvar checker =
+  Type.Var (Type.fresh_var checker.tvargen checker.level Kind.Mono)
+
+let rec unify_kinds l r =
+  let open Result.Monad_infix in
+  match l, r with
+  | Kind.Mono, Kind.Mono -> Ok ()
+  | Kind.Poly(a, b), Kind.Poly(c, d) ->
+     unify_kinds a c >>= fun () ->
+     unify_kinds b d
+  | Kind.Var { id = l; _ }, Kind.Var { id = r; _ } when l = r -> Ok ()
+  | Kind.Var { kind = Some k1; _ }, k2 -> unify_kinds k1 k2
+  | Kind.Var kvar, kind ->
+     if Kind.occurs kvar kind then
+       Error (Sequence.return (Message.Kind_unification_fail(l, r)))
+     else (
+       kvar.kind <- Some kind;
+       Ok ()
+     )
+  | l, r -> unify_kinds r l
 
 let rec kind_of_type checker =
   let open Result.Monad_infix in
   function
   | Type.App(tcon, targ) ->
-     kind_of_type checker targ >>= fun kind ->
-     kind_of_type checker tcon >>=
-       begin function
-         | Type.Poly(k1, k2) ->
-            if Type.equals_kind kind k1 then
-              Ok k2
-            else
-              Error (Sequence.return Message.Mismatched_kinds)
-         | Type.Mono -> Error Sequence.empty
-       end
+     kind_of_type checker targ >>= fun argkind ->
+     kind_of_type checker tcon >>= fun conkind ->
+     let kvar = Kind.Var (Kind.fresh_var checker.kvargen) in
+     unify_kinds conkind (Kind.Poly(argkind, kvar)) >>= fun () ->
+     Ok kvar
   | Type.Nominal id ->
      begin match Hashtbl.find checker.types id with
      | Some adt -> Ok (Type.kind_of_adt adt)
      | None -> Error (Sequence.return (Message.Unresolved_type id))
      end
-  | Type.Prim Type.Arrow -> Ok (Type.Poly(Type.Mono, Type.Mono))
-  | Type.Prim Type.Float -> Ok Type.Mono
-  | Type.Prim Type.Int -> Ok Type.Mono
-  | Type.Var { contents = Type.Assigned ty } -> kind_of_type checker ty
-  | Type.Var { contents = Type.Unassigned uvar } -> Ok uvar.kind
-
-(** Perform the occurs check, returning true if the typevar occurs in the type.
-    Adjusts the levels of unassigned typevars when necessary. *)
-let rec occurs (uvar : Type.UVar.t) = function
-  | Type.App(tcon, targ) -> occurs uvar tcon && occurs uvar targ
-  | Type.Nominal _ -> false
-  | Type.Prim _ -> false
-  | Type.Var cell ->
-     match !cell with
-     | Type.Assigned ty -> occurs uvar ty
-     | Type.Unassigned u ->
-        if (Type.UVar.compare u uvar) = 0 then
-          true
-        else (
-          (* Adjust levels if necessary *)
-          if u.level > uvar.level then (
-            u.level <- uvar.level
-          );
-          false
-        )
+  | Type.Prim Type.Arrow -> Ok (Kind.Poly(Kind.Mono, Kind.Mono))
+  | Type.Prim Type.Float -> Ok Kind.Mono
+  | Type.Prim Type.Int -> Ok Kind.Mono
+  | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
+  | Type.Var { ty = None; kind; _ } -> Ok kind
 
 (** Unify two types, returning the unification errors *)
 let rec unify checker lhs rhs =
@@ -64,43 +61,32 @@ let rec unify checker lhs rhs =
     | Type.Prim lprim, Type.Prim rprim when Type.equal_prim lprim rprim ->
        Sequence.empty
     | (Type.Var v, ty) | (ty, Type.Var v) ->
-       begin match !v with
-       | Type.Unassigned uvar ->
+       begin match v.ty with
+       | None ->
           begin match ty with
           (* A variable occurring in itself is not an error *)
-          | Type.Var {
-              contents = Type.Unassigned uvar2
-            } when (Type.UVar.compare uvar uvar2) = 0 ->
+          | Type.Var { ty = None; id; _ } when (compare v.id id) = 0 ->
              Sequence.empty
-          | _ when occurs uvar ty ->
-             Sequence.return (Message.Unification_fail(lhs, rhs))
-          | ty ->
+          | _ when Type.occurs v ty ->
+             Sequence.return (Message.Type_unification_fail(lhs, rhs))
+          | _ ->
              begin match kind_of_type checker ty with
              | Ok kind ->
-                if Type.equals_kind kind uvar.kind then (
-                  v := Type.Assigned ty;
-                  Sequence.empty
-                ) else
-                  Sequence.return Message.Mismatched_kinds
+                begin match unify_kinds kind v.kind with
+                | Ok () -> Sequence.empty
+                | Error e -> e
+                end
              | Error e -> e
              end
           end
-       | Type.Assigned t -> unify checker t ty
+       | Some t -> unify checker t ty
        end
-    | _ -> Sequence.return (Message.Unification_fail(lhs, rhs))
+    | _ -> Sequence.return (Message.Type_unification_fail(lhs, rhs))
 
 let unify_many checker ty =
   List.fold
     ~f:(fun acc next -> Sequence.append acc (unify checker ty next))
     ~init:Sequence.empty
-
-let fresh_utvar checker kind =
-  let old = checker.vargen in
-  checker.vargen <- old + 1;
-  Type.UVar.{ id = Type.UVar.Gen old
-            ; kind = kind
-            ; level = checker.level
-            ; name = None }
 
 let in_new_level f st =
   st.level <- st.level + 1;
@@ -112,20 +98,22 @@ let in_new_level f st =
     greater than or equal to target_level with type variables of level
     checker.level *)
 let inst checker target_level =
-  let map = Hashtbl.create (module Type.UVar) in
+  let map = Hashtbl.create (module Type.Var) in
   let rec helper = function
     | Type.App(tcon, targ) -> Type.App(helper tcon, helper targ)
-    | Type.Var { contents = Type.Assigned ty } -> helper ty
-    | (Type.Var { contents = Type.Unassigned uvar }) as var ->
-       if uvar.Type.UVar.level < target_level then
-         var
+    | Type.Var { ty = Some ty; _ } -> helper ty
+    | Type.Var ({ ty = None; level; _ } as var) as ty ->
+       if level < target_level then
+         ty
        else
-         begin match Hashtbl.find map uvar with
-         | Some uvar2 -> Type.of_uvar uvar2
+         begin match Hashtbl.find map var with
+         | Some var2 -> var2
          | None ->
-            let uvar2 = fresh_utvar checker uvar.kind in
-            Hashtbl.add_exn map ~key:uvar ~data:uvar2;
-            Type.of_uvar uvar2
+            let var2 =
+              Type.Var (Type.fresh_var checker.tvargen checker.level var.kind)
+            in
+            Hashtbl.add_exn map ~key:var ~data:var2;
+            var2
          end
     | ty -> ty
   in helper
@@ -138,7 +126,7 @@ let rec infer checker =
   | Term.App(f, x) ->
      begin match (infer checker f, infer checker x) with
      | (Ok f_ty, Ok x_ty) ->
-        let var = Type.of_uvar (fresh_utvar checker Type.Mono) in
+        let var = fresh_tvar checker in
         let result = unify checker f_ty (App(App(Prim Arrow, x_ty), var)) in
         if Sequence.is_empty result then
           Ok x_ty
@@ -149,7 +137,7 @@ let rec infer checker =
      end
 
   | Term.Case(_, _, cases) ->
-     let var = Type.of_uvar (fresh_utvar checker Type.Mono) in
+     let var = fresh_tvar checker in
      let types =
        Array.fold
          ~f:(fun acc next ->
@@ -166,7 +154,7 @@ let rec infer checker =
        Error result
 
   | Term.Lam(id, body) ->
-     let var = Type.of_uvar (fresh_utvar checker Type.Mono) in
+     let var = fresh_tvar checker in
      Hashtbl.add_exn checker.env ~key:id ~data:var;
      (infer checker body) >>= fun body_ty ->
      Ok (Type.App(Type.App(Type.Prim Type.Arrow, var), body_ty))
@@ -181,7 +169,7 @@ let rec infer checker =
        in_new_level (fun checker ->
            (* Associate each new binding with a fresh type variable *)
            let f (lhs, _) =
-             let ty = Type.of_uvar (fresh_utvar checker Type.Mono) in
+             let ty = fresh_tvar checker in
              Hashtbl.add_exn checker.env ~key:lhs ~data:ty
            in
            List.iter ~f:f bindings;

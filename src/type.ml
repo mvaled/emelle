@@ -1,63 +1,52 @@
 open Base
 
-type kind =
-  | Mono
-  | Poly of kind * kind
-[@@deriving sexp]
-
-let rec equals_kind k1 k2 =
-  match k1, k2 with
-  | Mono, Mono -> true
-  | Poly(a, b), Poly(c, d) -> equals_kind a c && equals_kind b d
-  | _ -> false
-
 type prim =
   | Arrow
   | Int
   | Float
-[@@deriving compare]
-
-module UVar = struct
-  type id =
-    | Annotated of int
-    | Gen of int
-  [@@deriving compare, hash, sexp]
-
-  type t =
-    { id : id
-    ; kind : kind [@compare.ignore][@hash.ignore]
-    ; mutable level : int [@compare.ignore][@hash.ignore]
-    ; name : string option [@compare.ignore][@hash.ignore] }
-  [@@deriving compare, hash, sexp]
-end
+[@@deriving compare, sexp]
 
 type t =
   | App of t * t
   | Nominal of Ident.t
   | Prim of prim
-  | Var of var ref
-
+  | Var of var
+[@@deriving sexp]
 and var =
-  | Unassigned of UVar.t
-  | Assigned of t
+  { id : int
+  ; mutable ty : t option
+  ; mutable level : int
+  ; kind : Kind.t }
+[@@deriving sexp]
+
+type vargen = int ref
+
+module Var = struct
+  type t = var
+  [@@deriving sexp]
+
+  type gen = vargen
+
+  let compare l r = compare l.id r.id
+  let hash x = x.id
+end
 
 type adt =
-  { typeparams: UVar.t list
+  { typeparams: var list
   ; constr_names: (string, int) Hashtbl.t
   ; constrs: (string * t array) array }
 
 let equal_prim x y = (compare_prim x y) = 0
 
-let of_uvar uvar = Var (ref (Unassigned uvar))
+let create_vargen () = { contents = 0 }
+
+let fresh_var vargen level kind =
+  vargen := !vargen + 1;
+  { id = !vargen - 1; ty = None; level; kind = kind }
 
 (** [with_params ty \[a; b; ...; z\]] is (... ((ty a) b) ...z) *)
 let with_params ty =
   List.fold ~f:(fun acc param -> App(acc, param)) ~init:ty
-
-let rec curry_kinds input_ks output_k =
-  match input_ks with
-  | [] -> output_k
-  | (k::ks) -> Poly(k, curry_kinds ks output_k)
 
 (** [curry \[a; b; ...; z\] ty] is a -> b -> ... z -> ty.
     [curry \[\] ty] is ty. *)
@@ -70,8 +59,18 @@ let rec curry input_tys output_ty =
 let type_of_constr ident adt constr =
   let _, product = adt.constrs.(constr) in
   let output_ty =
-    with_params (Nominal ident) (List.map ~f:of_uvar adt.typeparams)
+    with_params (Nominal ident) (List.map ~f:(fun x -> Var x) adt.typeparams)
   in curry (Array.to_list product) output_ty
 
 let kind_of_adt adt =
-  curry_kinds (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams) Mono
+  Kind.curry (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams) Kind.Mono
+
+(** Perform the occurs check, returning true if the typevar occurs in the type.
+    Adjusts the levels of unassigned typevars when necessary. *)
+let rec occurs tvar = function
+  | App(tcon, targ) -> occurs tvar tcon && occurs tvar targ
+  | Nominal _ -> false
+  | Prim _ -> false
+  | Var { id; _ } when id = tvar.id -> true
+  | Var { ty = Some ty; _ } -> occurs tvar ty
+  | Var { ty = None; _ } -> false
