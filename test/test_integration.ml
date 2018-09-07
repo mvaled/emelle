@@ -71,3 +71,14 @@ let desugar expr =
 
 let terms =
   test desugar Desugar asts
+
+let typecheck term =
+  let typechecker =
+    Typecheck.{ types = Hashtbl.create (module Ident)
+              ; env = Hashtbl.create (module Int)
+              ; level = 0
+              ; tvargen = ref 0
+              ; kvargen = ref 0 }
+  in Typecheck.infer typechecker term
+
+let _ = test typecheck Typecheck terms

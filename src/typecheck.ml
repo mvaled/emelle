@@ -18,15 +18,17 @@ let rec unify_kinds l r =
      unify_kinds a c >>= fun () ->
      unify_kinds b d
   | Kind.Var { id = l; _ }, Kind.Var { id = r; _ } when l = r -> Ok ()
-  | Kind.Var { kind = Some k1; _ }, k2 -> unify_kinds k1 k2
-  | Kind.Var kvar, kind ->
+  | Kind.Var { kind = Some k1; _ }, k2 | k2, Kind.Var { kind = Some k1; _ } ->
+     unify_kinds k1 k2
+  | Kind.Var kvar, kind | kind, Kind.Var kvar ->
      if Kind.occurs kvar kind then
        Error (Sequence.return (Message.Kind_unification_fail(l, r)))
      else (
        kvar.kind <- Some kind;
        Ok ()
      )
-  | l, r -> unify_kinds r l
+  | Kind.Mono, Kind.Poly _ | Kind.Poly _, Kind.Mono ->
+     Error (Sequence.return (Message.Kind_unification_fail(l, r)))
 
 let rec kind_of_type checker =
   let open Result.Monad_infix in
@@ -42,20 +44,23 @@ let rec kind_of_type checker =
      | Some adt -> Ok (Type.kind_of_adt adt)
      | None -> Error (Sequence.return (Message.Unresolved_type id))
      end
-  | Type.Prim Type.Arrow -> Ok (Kind.Poly(Kind.Mono, Kind.Mono))
+  | Type.Prim Type.Arrow ->
+     Ok (Kind.Poly(Kind.Mono, Kind.Poly(Kind.Mono, Kind.Mono)))
   | Type.Prim Type.Float -> Ok Kind.Mono
   | Type.Prim Type.Int -> Ok Kind.Mono
   | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
   | Type.Var { ty = None; kind; _ } -> Ok kind
 
 (** Unify two types, returning the unification errors *)
-let rec unify checker lhs rhs =
+let rec unify_types checker lhs rhs =
   if phys_equal lhs rhs then
     Sequence.empty
   else
     match lhs, rhs with
     | Type.App(lcon, larg), Type.App(rcon, rarg) ->
-       Sequence.append (unify checker lcon rcon) (unify checker larg rarg)
+       Sequence.append
+         (unify_types checker lcon rcon)
+         (unify_types checker larg rarg)
     | Type.Nominal lstr, Type.Nominal rstr when (Ident.compare lstr rstr) = 0 ->
        Sequence.empty
     | Type.Prim lprim, Type.Prim rprim when Type.equal_prim lprim rprim ->
@@ -79,13 +84,13 @@ let rec unify checker lhs rhs =
              | Error e -> e
              end
           end
-       | Some t -> unify checker t ty
+       | Some t -> unify_types checker t ty
        end
     | _ -> Sequence.return (Message.Type_unification_fail(lhs, rhs))
 
 let unify_many checker ty =
   List.fold
-    ~f:(fun acc next -> Sequence.append acc (unify checker ty next))
+    ~f:(fun acc next -> Sequence.append acc (unify_types checker ty next))
     ~init:Sequence.empty
 
 let in_new_level f st =
@@ -119,7 +124,7 @@ let inst checker target_level =
   in helper
 
 let rec infer checker =
-  let (>>=) = Result.(>>=) in
+  let open Result.Monad_infix in
   function
   | Term.Ann{term; _} -> infer checker term
 
@@ -127,7 +132,8 @@ let rec infer checker =
      begin match (infer checker f, infer checker x) with
      | (Ok f_ty, Ok x_ty) ->
         let var = fresh_tvar checker in
-        let result = unify checker f_ty (App(App(Prim Arrow, x_ty), var)) in
+        let result = unify_types checker f_ty (App(App(Prim Arrow, x_ty), var))
+        in
         if Sequence.is_empty result then
           Ok x_ty
         else
@@ -156,7 +162,7 @@ let rec infer checker =
   | Term.Lam(id, body) ->
      let var = fresh_tvar checker in
      Hashtbl.add_exn checker.env ~key:id ~data:var;
-     (infer checker body) >>= fun body_ty ->
+     infer checker body >>= fun body_ty ->
      Ok (Type.App(Type.App(Type.Prim Type.Arrow, var), body_ty))
 
   | Term.Let(lhs, rhs, body) ->
@@ -179,7 +185,7 @@ let rec infer checker =
              let tvar = Hashtbl.find_exn checker.env lhs in
              Sequence.append acc (
                  match infer checker rhs with
-                 | Ok ty -> unify checker tvar ty
+                 | Ok ty -> unify_types checker tvar ty
                  | Error e -> e
                )
            in List.fold ~f:f ~init:Sequence.empty bindings
@@ -195,7 +201,7 @@ let rec infer checker =
      | Some adt ->
         infer checker data >>= fun ty0 ->
         let ty1 = Type.type_of_constr typename adt constr in
-        let result = unify checker ty0 (inst checker 0 ty1) in
+        let result = unify_types checker ty0 (inst checker 0 ty1) in
         let _, tys = adt.Type.constrs.(constr) in
         if Sequence.is_empty result then
           Ok (tys.(idx))
