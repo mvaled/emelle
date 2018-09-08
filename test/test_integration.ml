@@ -46,6 +46,7 @@ let tests =
     ; "let f = fun x -> x and g = f in g", Desugar
     ; "let g = f and f = fun x -> x in g", Desugar
     ; "case fun x -> x with | x -> x | y -> x", Desugar
+    ; "fun x -> x x", Typecheck
     ; "let rec g = f and f = fun x -> x in g", End
     ; "let rec f = fun x -> x and g = f in g", End
     ; "let rec f = fun x -> f x in f", End

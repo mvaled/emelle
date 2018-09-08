@@ -68,9 +68,13 @@ let kind_of_adt adt =
 (** Perform the occurs check, returning true if the typevar occurs in the type.
     Adjusts the levels of unassigned typevars when necessary. *)
 let rec occurs tvar = function
-  | App(tcon, targ) -> occurs tvar tcon && occurs tvar targ
+  | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
   | Nominal _ -> false
   | Prim _ -> false
   | Var { id; _ } when id = tvar.id -> true
   | Var { ty = Some ty; _ } -> occurs tvar ty
-  | Var { ty = None; _ } -> false
+  | Var ({ ty = None; _ } as tvar2) ->
+     if tvar2.level > tvar.level then (
+       tvar2.level <- tvar.level
+     );
+     false

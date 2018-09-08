@@ -37,8 +37,8 @@ let rec kind_of_type checker =
      kind_of_type checker targ >>= fun argkind ->
      kind_of_type checker tcon >>= fun conkind ->
      let kvar = Kind.Var (Kind.fresh_var checker.kvargen) in
-     unify_kinds conkind (Kind.Poly(argkind, kvar)) >>= fun () ->
-     Ok kvar
+     unify_kinds conkind (Kind.Poly(argkind, kvar)) >>| fun () ->
+     kvar
   | Type.Nominal id ->
      begin match Hashtbl.find checker.types id with
      | Some adt -> Ok (Type.kind_of_adt adt)
@@ -69,21 +69,17 @@ let rec unify_types checker lhs rhs =
        Ok ()
     | Type.Prim lprim, Type.Prim rprim when Type.equal_prim lprim rprim ->
        Ok ()
-    | (Type.Var v, ty) | (ty, Type.Var v) ->
-       begin match v.ty with
-       | None ->
-          begin match ty with
-          (* A variable occurring in itself is not an error *)
-          | Type.Var { ty = None; id; _ } when (compare v.id id) = 0 ->
-             Ok ()
-          | _ when Type.occurs v ty ->
-             Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
-          | _ ->
-             kind_of_type checker ty >>= fun kind ->
-             unify_kinds kind v.kind
-          end
-       | Some t -> unify_types checker t ty
-       end
+    | Type.Var { id = id1; _ }, Type.Var { id = id2; _ } when id1 = id2 ->
+       Ok ()
+    | Type.Var { ty = Some ty1; _ }, ty2 | ty2, Type.Var { ty = Some ty1; _ } ->
+       unify_types checker ty1 ty2
+    | Type.Var var, ty | ty, Type.Var var ->
+       if Type.occurs var ty then
+         Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
+       else
+         kind_of_type checker ty >>= fun kind ->
+         unify_kinds kind var.kind >>| fun () ->
+         var.ty <- Some ty
     | _ -> Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
 
 let unify_many checker ty =

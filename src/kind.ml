@@ -22,7 +22,7 @@ let rec curry input_ks output_k =
 
 let rec occurs kvar = function
   | Mono -> false
-  | Poly(k1, k2) -> occurs kvar k1 && occurs kvar k2
-  | Var { kind = Some kind; _ } -> occurs kvar kind
+  | Poly(k1, k2) -> occurs kvar k1 || occurs kvar k2
   | Var { id; _ } when id = kvar.id -> true
-  | _ -> false
+  | Var { kind = Some kind; _ } -> occurs kvar kind
+  | Var { kind = None; _ } -> false
