@@ -53,45 +53,49 @@ let rec kind_of_type checker =
 
 (** Unify two types, returning the unification errors *)
 let rec unify_types checker lhs rhs =
+  let open Result.Monad_infix in
   if phys_equal lhs rhs then
-    Sequence.empty
+    Ok ()
   else
     match lhs, rhs with
     | Type.App(lcon, larg), Type.App(rcon, rarg) ->
-       Sequence.append
-         (unify_types checker lcon rcon)
-         (unify_types checker larg rarg)
+       begin
+         match unify_types checker lcon rcon, unify_types checker larg rarg with
+         | Ok (), Ok () -> Ok ()
+         | Error e, Ok () | Ok (), Error e -> Error e
+         | Error e1, Error e2 -> Error (Sequence.append e1 e2)
+       end
     | Type.Nominal lstr, Type.Nominal rstr when (Ident.compare lstr rstr) = 0 ->
-       Sequence.empty
+       Ok ()
     | Type.Prim lprim, Type.Prim rprim when Type.equal_prim lprim rprim ->
-       Sequence.empty
+       Ok ()
     | (Type.Var v, ty) | (ty, Type.Var v) ->
        begin match v.ty with
        | None ->
           begin match ty with
           (* A variable occurring in itself is not an error *)
           | Type.Var { ty = None; id; _ } when (compare v.id id) = 0 ->
-             Sequence.empty
+             Ok ()
           | _ when Type.occurs v ty ->
-             Sequence.return (Message.Type_unification_fail(lhs, rhs))
+             Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
           | _ ->
-             begin match kind_of_type checker ty with
-             | Ok kind ->
-                begin match unify_kinds kind v.kind with
-                | Ok () -> Sequence.empty
-                | Error e -> e
-                end
-             | Error e -> e
-             end
+             kind_of_type checker ty >>= fun kind ->
+             unify_kinds kind v.kind
           end
        | Some t -> unify_types checker t ty
        end
-    | _ -> Sequence.return (Message.Type_unification_fail(lhs, rhs))
+    | _ -> Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
 
 let unify_many checker ty =
   List.fold
-    ~f:(fun acc next -> Sequence.append acc (unify_types checker ty next))
-    ~init:Sequence.empty
+    ~f:(fun acc next ->
+      let result = unify_types checker ty next in
+      match acc, result with
+      | Ok (), Ok () -> Ok ()
+      | Ok (), Error e | Error e, Ok () -> Error e
+      | Error e1, Error e2 -> Error (Sequence.append e1 e2)
+    )
+    ~init:(Ok ())
 
 let in_new_level f st =
   st.level <- st.level + 1;
@@ -129,15 +133,11 @@ let rec infer checker =
   | Term.Ann{term; _} -> infer checker term
 
   | Term.App(f, x) ->
-     begin match (infer checker f, infer checker x) with
+     begin match infer checker f, infer checker x with
      | (Ok f_ty, Ok x_ty) ->
         let var = fresh_tvar checker in
         let result = unify_types checker f_ty (App(App(Prim Arrow, x_ty), var))
-        in
-        if Sequence.is_empty result then
-          Ok x_ty
-        else
-          Error result
+        in result >>| fun () -> x_ty
      | (Error f_err, Error x_err) -> Error (Sequence.append f_err x_err)
      | (err, Ok _) | (Ok _, err) -> err
      end
@@ -151,13 +151,7 @@ let rec infer checker =
            (infer checker next) >>= fun ty ->
            Ok (ty::acc)
          ) ~init:(Ok []) cases
-     in
-     types >>= fun types ->
-     let result = unify_many checker var types in
-     if Sequence.is_empty result then
-       Ok var
-     else
-       Error result
+     in types >>= fun types -> unify_many checker var types >>| fun () -> var
 
   | Term.Lam(id, body) ->
      let var = fresh_tvar checker in
@@ -183,18 +177,14 @@ let rec infer checker =
               the type variable *)
            let f acc (lhs, rhs) =
              let tvar = Hashtbl.find_exn checker.env lhs in
-             Sequence.append acc (
-                 match infer checker rhs with
-                 | Ok ty -> unify_types checker tvar ty
-                 | Error e -> e
-               )
-           in List.fold ~f:f ~init:Sequence.empty bindings
+             infer checker rhs >>= fun ty ->
+             match acc, unify_types checker tvar ty with
+             | Ok (), Ok () -> Ok ()
+             | Ok (), Error e | Error e, Ok () -> Error e
+             | Error e1, Error e2 -> Error (Sequence.append e1 e2)
+           in List.fold ~f:f ~init:(Ok ()) bindings
          ) checker
-     in
-     if Sequence.is_empty result then (
-       infer checker body
-     ) else
-       Error result
+     in result >>= fun () -> infer checker body
 
   | Term.Select(typename, constr, idx, data) ->
      begin match Hashtbl.find checker.types typename with
@@ -203,10 +193,7 @@ let rec infer checker =
         let ty1 = Type.type_of_constr typename adt constr in
         let result = unify_types checker ty0 (inst checker 0 ty1) in
         let _, tys = adt.Type.constrs.(constr) in
-        if Sequence.is_empty result then
-          Ok (tys.(idx))
-        else
-          Error result
+        result >>| fun () -> tys.(idx)
      | None -> Error (Sequence.return (Message.Unresolved_type typename))
      end
 
