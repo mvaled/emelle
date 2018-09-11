@@ -1,0 +1,44 @@
+open Base
+
+type t =
+  { buffer : Buffer.t }
+
+let print_ident pp = function
+  | Ident.Local str ->
+     Buffer.add_string pp.buffer str
+  | Ident.Path(list, str) ->
+     List.iter ~f:(fun x ->
+         Buffer.add_string pp.buffer x;
+         Buffer.add_string pp.buffer "::"
+       ) list;
+     Buffer.add_string pp.buffer str
+
+let with_necessary_parens f pp parent_prec prec =
+  if parent_prec >= prec then (
+    Buffer.add_char pp.buffer '(';
+    f pp;
+    Buffer.add_char pp.buffer ')';
+  ) else
+    f pp
+
+let rec print_type pp parent_prec = function
+  | Type.App(f, x) ->
+     let prec = 1 in
+     with_necessary_parens (fun pp ->
+         print_type pp (prec - 1) f;
+         Buffer.add_char pp.buffer ' ';
+         print_type pp prec x
+       ) pp parent_prec prec
+  | Type.Nominal id ->
+     print_ident pp id
+  | Type.Prim Type.Arrow ->
+     Buffer.add_string pp.buffer "(->)"
+  | Type.Prim Type.Int ->
+     Buffer.add_string pp.buffer "Int"
+  | Type.Prim Type.Float ->
+     Buffer.add_string pp.buffer "Float"
+  | Type.Var { ty = Some ty; _ } ->
+     print_type pp parent_prec ty
+  | Type.Var { id; _ } ->
+     Buffer.add_char pp.buffer 't';
+     Buffer.add_string pp.buffer (Int.to_string id)
