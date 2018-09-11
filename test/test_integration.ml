@@ -15,12 +15,12 @@ let make_test (a, b) = (a, a, b)
 let test f stage =
   List.fold_right ~f:(
       fun (repr, text, fail_stage) acc ->
-      match f repr, compare_stage stage fail_stage with
+      match f repr, (compare_stage stage fail_stage) = 0 with
       (* Succeeded, supposed to succeed *)
-      | Ok next, _ ->
+      | Ok next, false ->
          (next, text, fail_stage)::acc
       (* Failed, supposed to fail *)
-      | Error _, 0 ->
+      | Error _, true ->
          acc
       | _ ->
          raise (Fail(text, stage))
