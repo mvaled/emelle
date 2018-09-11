@@ -7,6 +7,13 @@ type t =
   ; tvargen : Type.vargen
   ; kvargen : Kind.vargen }
 
+let create () =
+  { types = Hashtbl.create (module Ident)
+  ; env = Hashtbl.create (module Int)
+  ; level = 0
+  ; tvargen = Type.create_vargen ()
+  ; kvargen = Kind.create_vargen () }
+
 let fresh_tvar checker =
   Type.Var (Type.fresh_var checker.tvargen checker.level Kind.Mono)
 

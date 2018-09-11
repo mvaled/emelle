@@ -15,12 +15,12 @@ let make_test (a, b) = (a, a, b)
 let test f stage =
   List.fold_right ~f:(
       fun (repr, text, fail_stage) acc ->
-      match f repr, (compare_stage stage fail_stage) = 0 with
+      match f repr, compare_stage stage fail_stage with
       (* Succeeded, supposed to succeed *)
-      | Ok next, false ->
+      | Ok next, _ ->
          (next, text, fail_stage)::acc
       (* Failed, supposed to fail *)
-      | Error _, true ->
+      | Error _, 0 ->
          acc
       | _ ->
          raise (Fail(text, stage))
@@ -60,27 +60,22 @@ let tests =
     ]
 
 let asts =
-  test
-    (optionally (fun str -> Parser.file Lexer.expr (Lexing.from_string str)))
-    Syntax tests
+  test (
+      optionally (fun str -> Parser.file Lexer.expr (Lexing.from_string str))
+    ) Syntax tests
 
 let desugar expr =
   let env = Env.empty (module String) in
-  let desugarer =
-    Desugar.{ vargen = 0
-            ; typedefs = Env.empty (module Ident) }
-  in Desugar.term_of_expr desugarer env expr
+  let desugarer = Desugar.create () in
+  Desugar.term_of_expr desugarer env expr
 
 let terms =
   test desugar Desugar asts
 
 let typecheck term =
-  let typechecker =
-    Typecheck.{ types = Hashtbl.create (module Ident)
-              ; env = Hashtbl.create (module Int)
-              ; level = 0
-              ; tvargen = ref 0
-              ; kvargen = ref 0 }
-  in Typecheck.infer typechecker term
+  let open Result.Monad_infix in
+  let typechecker = Typecheck.create () in
+  Typecheck.infer typechecker term >>| fun _ ->
+  term
 
-let _ = test typecheck Typecheck terms
+let terms = test typecheck Typecheck terms

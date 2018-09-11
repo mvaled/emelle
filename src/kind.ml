@@ -11,6 +11,8 @@ and var =
 
 type vargen = int ref
 
+let create_vargen () = ref 0
+
 let fresh_var vargen =
   vargen := !vargen + 1;
   { id = !vargen - 1; kind = None }

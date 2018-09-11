@@ -3,6 +3,10 @@ open Base
 type t =
   { buffer : Buffer.t }
 
+let create () = { buffer = Buffer.create 12 }
+
+let to_string pp = Buffer.contents pp.buffer
+
 let print_ident pp = function
   | Ident.Local str ->
      Buffer.add_string pp.buffer str

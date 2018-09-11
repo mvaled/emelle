@@ -12,6 +12,10 @@ and 'a pattern' =
   | Con of Ident.t * int * 'a pattern list
   | Wild
 
+let create () =
+  { vargen = 0
+  ; typedefs = Env.empty (module Ident) }
+
 let fresh_register st =
   st.vargen <- st.vargen + 1;
   st.vargen - 1

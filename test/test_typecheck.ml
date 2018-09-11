@@ -1,13 +1,6 @@
 open Base
 open Emelle
 
-let create_checker () =
-  Typecheck.{ types = Hashtbl.create (module Ident)
-            ; env = Hashtbl.create (module Int)
-            ; level = 0
-            ; tvargen = ref 0
-            ; kvargen = ref 0 }
-
 let monotypes =
   [ Type.Prim Type.Int
   ; Type.Prim Type.Float
@@ -27,7 +20,7 @@ let rec is_mono = function
 
 let () =
   let f x =
-    let checker = create_checker () in
+    let checker = Typecheck.create () in
     match Typecheck.kind_of_type checker x with
     | Ok kind -> assert (is_mono kind)
     | Error _ -> assert false
@@ -35,7 +28,7 @@ let () =
 
 let () =
   let f x =
-    let checker = create_checker () in
+    let checker = Typecheck.create () in
     match Typecheck.kind_of_type checker x with
     | Ok kind -> assert (not (is_mono kind))
     | Error _ -> assert false
