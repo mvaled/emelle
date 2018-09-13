@@ -92,7 +92,11 @@ let rec occurs tvar ty =
      | Prim _ -> false
      | Var { id; _ } when id = tvar.id -> true
      | Var { ty = Some ty; _ } -> occurs tvar ty
-     | Var _ -> false
+     | Var tvar2 ->
+        if tvar2.level > tvar.level then (
+          tvar2.level <- tvar.level
+        );
+        false
 
 let of_node node = { level_opt = None; node}
 
