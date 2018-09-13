@@ -12,7 +12,22 @@ let () =
   assert ((Type.Var.compare tvar2 tvar2) = 0)
 
 let () =
-  assert (Type.occurs tvar1 (Type.Var tvar1));
-  assert (Type.occurs tvar1 (Type.App(Type.Var tvar1, Type.Prim Type.Float)));
-  assert (Type.occurs tvar2 (Type.App(Type.Prim Type.Arrow, Type.Var tvar2)));
-  assert (not (Type.occurs tvar1 (Type.Var tvar2)))
+  assert (Type.occurs tvar1 (Type.of_node (Type.Var tvar1)));
+  assert (Type.occurs tvar1
+            (Type.of_node (Type.App(
+                              Type.of_node(Type.Var tvar1),
+                              Type.of_node (Type.Prim Type.Float)
+                            )
+               )
+            )
+    );
+  assert (Type.occurs tvar2
+            (Type.of_node
+               (Type.App(
+                    Type.of_node (Type.Prim Type.Arrow),
+                    Type.of_node (Type.Var tvar2)
+                  )
+               )
+            )
+    );
+  assert (not (Type.occurs tvar1 (Type.of_node (Type.Var tvar2))))

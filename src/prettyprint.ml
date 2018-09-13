@@ -25,7 +25,8 @@ let with_necessary_parens f pp parent_prec prec =
   ) else
     f pp
 
-let rec print_type pp parent_prec = function
+let rec print_type pp parent_prec ty =
+  match ty.Type.node with
   | Type.App(f, x) ->
      let prec = 1 in
      with_necessary_parens (fun pp ->

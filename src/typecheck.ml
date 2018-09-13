@@ -14,8 +14,10 @@ let create () =
   ; tvargen = Type.create_vargen ()
   ; kvargen = Kind.create_vargen () }
 
-let fresh_tvar checker =
-  Type.Var (Type.fresh_var checker.tvargen checker.level Kind.Mono)
+let fresh_tvar (checker : t) =
+  Type.{ level_opt = Some checker.level
+       ; node =
+           Type.Var (Type.fresh_var checker.tvargen checker.level Kind.Mono) }
 
 let rec unify_kinds l r =
   let open Result.Monad_infix in
@@ -37,9 +39,9 @@ let rec unify_kinds l r =
   | Kind.Mono, Kind.Poly _ | Kind.Poly _, Kind.Mono ->
      Error (Sequence.return (Message.Kind_unification_fail(l, r)))
 
-let rec kind_of_type checker =
+let rec kind_of_type checker ty =
   let open Result.Monad_infix in
-  function
+  match ty.Type.node with
   | Type.App(tcon, targ) ->
      kind_of_type checker targ >>= fun argkind ->
      kind_of_type checker tcon >>= fun conkind ->
@@ -65,22 +67,29 @@ let rec unify_types checker lhs rhs =
     Ok ()
   else
     match lhs, rhs with
-    | Type.App(lcon, larg), Type.App(rcon, rarg) ->
+    | Type.{ node = Type.App(lcon, larg); _ },
+      Type.{ node = Type.App(rcon, rarg); _ } ->
        begin
          match unify_types checker lcon rcon, unify_types checker larg rarg with
          | Ok (), Ok () -> Ok ()
          | Error e, Ok () | Ok (), Error e -> Error e
          | Error e1, Error e2 -> Error (Sequence.append e1 e2)
        end
-    | Type.Nominal lstr, Type.Nominal rstr when (Ident.compare lstr rstr) = 0 ->
+    | { node = Type.Nominal lstr; _ },
+      { node = Type.Nominal rstr; _ }
+         when (Ident.compare lstr rstr) = 0 ->
        Ok ()
-    | Type.Prim lprim, Type.Prim rprim when Type.equal_prim lprim rprim ->
+    | { node = Type.Prim lprim; _ },
+      { node = Type.Prim rprim; _ }
+         when Type.equal_prim lprim rprim ->
        Ok ()
-    | Type.Var { id = id1; _ }, Type.Var { id = id2; _ } when id1 = id2 ->
+    | { node = Type.Var { id = id1; _ }; _ },
+      { node = Type.Var { id = id2; _ }; _ } when id1 = id2 ->
        Ok ()
-    | Type.Var { ty = Some ty1; _ }, ty2 | ty2, Type.Var { ty = Some ty1; _ } ->
-       unify_types checker ty1 ty2
-    | Type.Var var, ty | ty, Type.Var var ->
+    | { node = Type.Var { ty = Some ty0; _ }; _ }, ty1
+    | ty0, { node = Type.Var { ty = Some ty1; _ }; _ } ->
+       unify_types checker ty0 ty1
+    | { node = Type.Var var; _ }, ty | ty, { node = Type.Var var; _ } ->
        if Type.occurs var ty then
          Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
        else
@@ -111,10 +120,13 @@ let in_new_level f st =
     checker.level *)
 let inst checker target_level =
   let map = Hashtbl.create (module Type.Var) in
-  let rec helper = function
-    | Type.App(tcon, targ) -> Type.App(helper tcon, helper targ)
+  let rec helper ty =
+    match ty.Type.node with
+    | Type.App(tcon, targ) ->
+       { Type.level_opt = Some checker.level
+       ; Type.node = Type.App(helper tcon, helper targ) }
     | Type.Var { ty = Some ty; _ } -> helper ty
-    | Type.Var ({ ty = None; level; _ } as var) as ty ->
+    | Type.Var ({ ty = None; level; _ } as var) ->
        if level < target_level then
          ty
        else
@@ -122,12 +134,16 @@ let inst checker target_level =
          | Some var2 -> var2
          | None ->
             let var2 =
-              Type.Var (Type.fresh_var checker.tvargen checker.level var.kind)
+              { Type.level_opt = Some checker.level
+              ; Type.node =
+                       Type.Var
+                         (Type.fresh_var checker.tvargen checker.level var.kind)
+              }
             in
             Hashtbl.add_exn map ~key:var ~data:var2;
             var2
          end
-    | ty -> ty
+    | _ -> ty
   in helper
 
 let rec infer checker =
@@ -139,8 +155,8 @@ let rec infer checker =
      begin match infer checker f, infer checker x with
      | (Ok f_ty, Ok x_ty) ->
         let var = fresh_tvar checker in
-        let result = unify_types checker f_ty (App(App(Prim Arrow, x_ty), var))
-        in result >>| fun () -> x_ty
+        let result = unify_types checker f_ty (Type.arrow x_ty var) in
+        result >>| fun () -> x_ty
      | (Error f_err, Error x_err) -> Error (Sequence.append f_err x_err)
      | (err, Ok _) | (Ok _, err) -> err
      end
@@ -160,7 +176,7 @@ let rec infer checker =
      let var = fresh_tvar checker in
      Hashtbl.add_exn checker.env ~key:id ~data:var;
      infer checker body >>= fun body_ty ->
-     Ok (Type.App(Type.App(Type.Prim Type.Arrow, var), body_ty))
+     Ok (Type.arrow var body_ty)
 
   | Term.Let(lhs, rhs, body) ->
      in_new_level (fun checker -> infer checker rhs) checker >>= fun ty ->
