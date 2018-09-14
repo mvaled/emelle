@@ -96,7 +96,7 @@ let rec decision_tree_of_matrix env = function
         (* Case 3 *)
         begin match Env.find env typename with
         | None -> None
-        | Some alg ->
+        | Some (alg, _) ->
            let jump_tbl = Hashtbl.create (module Int) in
            let default = default_matrix rows in
            let result =

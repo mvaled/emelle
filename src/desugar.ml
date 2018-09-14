@@ -24,7 +24,7 @@ let find_typedef st typename = Env.find st.typedefs typename
 
 let idx_of_constr st typename con =
   match find_typedef st typename with
-  | Some adt ->
+  | Some (adt, _) ->
      begin match Hashtbl.find adt.constr_names con with
      | Some idx -> Ok idx
      | None -> Error (Sequence.return (Message.Unknown_constr(typename, con)))
@@ -226,7 +226,7 @@ let rec term_of_expr st env (ann, node) =
        begin match id with
        | Local str ->
           begin match Env.find env str with
-          | Some reg -> Ok (Term.Var reg)
+          | Some (reg, _) -> Ok (Term.Var reg)
           | None -> Error (Sequence.return (Message.Unresolved_id id))
           end
        | Path _ -> Error (Sequence.return (Message.Unimplemented "path"))

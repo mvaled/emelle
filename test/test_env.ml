@@ -7,7 +7,7 @@ let () =
   | None -> assert false
   | Some env ->
      match Env.find env 3 with
-     | Some "foo" ->
+     | Some ("foo", 0) ->
         Env.in_scope (fun env ->
             match Env.add env 5 "bar" with
             | None -> assert false
@@ -16,11 +16,11 @@ let () =
                | None -> assert false
                | Some env ->
                   match Env.find env 3 with
-                  | Some "baz" -> ()
+                  | Some ("baz", 1) -> ()
                   | _ -> assert false
           ) env;
         begin match Env.find env 3 with
-        | Some "foo" -> ()
+        | Some ("foo", 0) -> ()
         | _ -> assert false
         end
      | _ -> assert false
