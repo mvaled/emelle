@@ -42,8 +42,8 @@ monotype_eof: monotype EOF { $1 };
 adt_eof: adt EOF { $1 }
 
 adt:
-  | TYPE IDENT list(IDENT) EQUALS option(BAR) separated_list(BAR, constr) {
-      Ast.{ name = $2; typeparams = $3; constrs = $6 }
+  | IDENT list(IDENT) EQUALS option(BAR) separated_list(BAR, constr) {
+      Ast.{ name = $1; typeparams = $2; constrs = $5 }
     }
   ;
 

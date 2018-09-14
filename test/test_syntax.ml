@@ -68,23 +68,23 @@ let invalid_monotypes =
   ]
 
 let valid_adts =
-  [ "type Void ="
-  ; "type Void = |"
-  ; "type Unit = Unit"
-  ; "type Unit = | Unit"
-  ; "type Option a = Some a | None"
-  ; "type List a = | Cons a (List a) | Nil"
-  ; "type Bool = False | True"
-  ; "type Either e a = Left e | Right a"
-  ; "type StateT s m a = StateT s -> m (Product a s)"
+  [ "Void ="
+  ; "Void = |"
+  ; "Unit = Unit"
+  ; "Unit = | Unit"
+  ; "Option a = Some a | None"
+  ; "List a = | Cons a (List a) | Nil"
+  ; "Bool = False | True"
+  ; "Either e a = Left e | Right a"
+  ; "StateT s m a = StateT s -> m (Product a s)"
   ]
 
 let invalid_adts =
   [ ""
-  ; "type = "
-  ; "type = Unit"
-  ; "type X = Y |"
-  ; "type TupleSyntaxNotSupported a b = Foo (a, b)"
+  ; "= "
+  ; "= Unit"
+  ; "X = Y |"
+  ; "TupleSyntaxNotSupported a b = Foo (a, b)"
   ]
 
 let () =
