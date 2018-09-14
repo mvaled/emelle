@@ -16,10 +16,18 @@ let () =
                | None -> assert false
                | Some env ->
                   match Env.find env 3 with
-                  | Some ("baz", 1) -> ()
+                  | Some ("baz", 1) ->
+                     begin match Env.find_super env 1 3 with
+                     | Some ("foo", 0) -> ()
+                     | _ -> assert false
+                     end
                   | _ -> assert false
           ) env;
         begin match Env.find env 3 with
+        | Some ("foo", 0) -> ()
+        | _ -> assert false
+        end;
+        begin match Env.find_super env 0 3 with
         | Some ("foo", 0) -> ()
         | _ -> assert false
         end
