@@ -4,7 +4,7 @@ open Emelle
 
 let () =
   let open Result.Monad_infix in
-  match (
+  match
     let chan = Lexing.from_channel stdin in
     let ast = Parser.expr_eof Lexer.expr chan in
     let env = Env.empty (module String) in
@@ -13,7 +13,7 @@ let () =
     result >>= fun term ->
     let typechecker = Typecheck.create () in
     Typecheck.infer typechecker term
-  ) with
+  with
   | Ok ty ->
      let pprinter = Prettyprint.create () in
      Prettyprint.print_type pprinter (-1) ty;

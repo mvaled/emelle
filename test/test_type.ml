@@ -15,19 +15,11 @@ let () =
   assert (Type.occurs tvar1 (Type.of_node (Type.Var tvar1)));
   assert (Type.occurs tvar1
             (Type.of_node (Type.App(
-                              Type.of_node(Type.Var tvar1),
-                              Type.of_node (Type.Prim Type.Float)
-                            )
-               )
-            )
-    );
+                              Type.of_node (Type.Var tvar1),
+                              Type.of_node (Type.Prim Type.Float)))));
   assert (Type.occurs tvar2
             (Type.of_node
                (Type.App(
                     Type.of_node (Type.Prim Type.Arrow),
-                    Type.of_node (Type.Var tvar2)
-                  )
-               )
-            )
-    );
+                    Type.of_node (Type.Var tvar2)))));
   assert (not (Type.occurs tvar1 (Type.of_node (Type.Var tvar2))))
