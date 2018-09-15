@@ -40,6 +40,10 @@ type adt =
   ; constr_names: (string, int) Hashtbl.t
   ; constrs: (string * t array) array }
 
+type decl =
+  | Abstract of Kind.t
+  | Adt of adt
+
 let equal_prim x y = (compare_prim x y) = 0
 
 let create_vargen () = { contents = 0 }

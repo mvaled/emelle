@@ -1,6 +1,7 @@
 open Base
 
 type error =
+  | Abstract_type of Ident.t
   | Kind_unification_fail of Kind.t * Kind.t
   | Lexer_error of string
   | Mismatched_arity

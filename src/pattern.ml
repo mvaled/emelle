@@ -87,39 +87,40 @@ let default_matrix
   in List.fold ~f:helper ~init:[] rows
 
 (** Compilation scheme CC *)
-let rec decision_tree_of_matrix env = function
-  | [] -> Some Fail (* Case 1 *)
+let rec decision_tree_of_matrix env =
+  let open Result.Monad_infix in
+  function
+  | [] -> Ok Fail (* Case 1 *)
   | (row::_) as rows ->
      match find_typename (row.first_pattern::row.rest_patterns) with
-     | None -> Some (Leaf row.action) (* Case 2 *)
+     | None -> Ok (Leaf row.action) (* Case 2 *)
      | Some (typename, i) ->
         (* Case 3 *)
-        begin match Env.find env typename with
-        | None -> None
-        | Some (alg, _) ->
+        match Env.find env typename with
+        | None ->
+           Error (Sequence.return (Message.Unresolved_type typename))
+        | Some (Type.Abstract _, _) ->
+           Error (Sequence.return (Message.Abstract_type typename))
+        | Some (Type.Adt alg, _) ->
            let jump_tbl = Hashtbl.create (module Int) in
            let default = default_matrix rows in
            let result =
              Array.foldi ~f:(fun id acc (_, products) ->
-                 if acc then
+                 acc >>= fun () ->
                    let matrix =
                      match specialize id (Array.length products) rows with
                      | [] -> default
                      | matrix -> matrix
                    in
                    match decision_tree_of_matrix env matrix with
-                   | Some tree ->
+                   | Ok tree ->
                       Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
-                      true
-                   | None -> false
-                 else
-                   false) alg.Type.constrs ~init:true
+                      Ok ()
+                   | Error e -> Error e
+               ) alg.Type.constrs ~init:(Ok ())
            in
-           if result then
+           result >>| fun () ->
              if i = 0 then
-               Some (Switch jump_tbl)
+               Switch jump_tbl
              else
-               Some (Swap (i, Switch jump_tbl))
-           else
-             None
-        end
+               Swap (i, Switch jump_tbl)

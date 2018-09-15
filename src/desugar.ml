@@ -2,7 +2,7 @@ open Base
 
 type 'cmp t =
   { mutable vargen : int
-  ; typedefs : (Ident.t, Type.adt, 'cmp) Env.t }
+  ; typedefs : (Ident.t, Type.decl, 'cmp) Env.t }
 
 (* Tag pattern with register *)
 type 'a pattern = 'a pattern' * int
@@ -20,16 +20,19 @@ let fresh_register st =
   st.vargen <- st.vargen + 1;
   st.vargen - 1
 
-let find_typedef st typename = Env.find st.typedefs typename
+let find_typedef st typename =
+  match Env.find st.typedefs typename with
+  | None -> Error (Sequence.return (Message.Unresolved_type typename))
+  | Some (Type.Abstract _, _) ->
+     Error (Sequence.return (Message.Abstract_type typename))
+  | Some (Type.Adt adt, _) -> Ok adt
 
 let idx_of_constr st typename con =
-  match find_typedef st typename with
-  | Some (adt, _) ->
-     begin match Hashtbl.find adt.constr_names con with
-     | Some idx -> Ok idx
-     | None -> Error (Sequence.return (Message.Unknown_constr(typename, con)))
-     end
-  | None -> Error (Sequence.return (Message.Unresolved_type typename))
+  let open Result.Monad_infix in
+  find_typedef st typename >>= fun adt ->
+  match Hashtbl.find adt.constr_names con with
+  | Some idx -> Ok idx
+  | None -> Error (Sequence.return (Message.Unknown_constr(typename, con)))
 
 (** Convert a pattern from the AST representation to the representation defined
     in this module, returning errors when constructors or types aren't defined.
@@ -118,11 +121,8 @@ let rec term_of_expr st env (ann, node) =
        in
        result >>= fun (_, rows, branches) ->
        let branches = Array.of_list branches in
-       begin match Pattern.decision_tree_of_matrix st.typedefs rows with
-       | Some tree ->
-          Ok (Term.Let(reg, test, (Term.Case([reg_var], tree, branches))))
-       | None -> Error (Sequence.return (Message.Unreachable))
-       end
+       Pattern.decision_tree_of_matrix st.typedefs rows >>| fun tree ->
+       Term.Let(reg, test, (Term.Case([reg_var], tree, branches)))
 
     | Ast.Lam((_, patterns, _) as case, cases) ->
        let reg = fresh_register st in
@@ -163,19 +163,16 @@ let rec term_of_expr st env (ann, node) =
            ) ~init:(Ok (0, [], [])) (case::cases)
        in
        branches_result >>= fun (_, matrix, branches) ->
-       begin match Pattern.decision_tree_of_matrix st.typedefs matrix with
-       | Some tree ->
-          let case_term =
-            Term.Case( List.map ~f:(fun reg -> Term.Var reg) (reg::regs)
-                     , tree
-                     , Array.of_list branches )
-          in
-          let rec f cont = function
-            | [] -> cont
-            | (reg::regs) -> Term.Lam(reg, f cont regs)
-          in Ok (f case_term (reg::regs))
-       | None -> Error (Sequence.return Message.Unreachable)
-       end
+       Pattern.decision_tree_of_matrix st.typedefs matrix >>| fun tree ->
+       let case_term =
+         Term.Case( List.map ~f:(fun reg -> Term.Var reg) (reg::regs)
+                  , tree
+                  , Array.of_list branches )
+       in
+       let rec f cont = function
+         | [] -> cont
+         | (reg::regs) -> Term.Lam(reg, f cont regs)
+       in f case_term (reg::regs)
 
     | Ast.Let(bindings, body) ->
        let rec f env' = function
@@ -189,12 +186,10 @@ let rec term_of_expr st env (ann, node) =
                                    ; rest_patterns = []
                                    ; action = 0 } ]
             in
-            match Pattern.decision_tree_of_matrix st.typedefs matrix with
-            | Some tree ->
-               f env' xs >>| fun cont ->
-               let term = term_of_pattern st def cont pat in
-               Term.Case([def], tree, [|term|])
-            | None -> Error (Sequence.return Message.Unreachable)
+            Pattern.decision_tree_of_matrix st.typedefs matrix >>= fun tree ->
+            f env' xs >>| fun cont ->
+            let term = term_of_pattern st def cont pat in
+            Term.Case([def], tree, [|term|])
        in f env bindings
 
     | Ast.Let_rec(bindings, body) ->
