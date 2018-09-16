@@ -42,12 +42,10 @@ expr_eof: expr EOF { $1 };
 monotype_eof: monotype EOF { $1 };
 adt_eof: adt EOF { $1 }
 
-upath_helper: UIDENT list(DOT UIDENT { $2 }) { $1, $2 }
-upath: upath_helper {
-      let (root, list) = $1 in
-      match Base.List.rev list with
-      | [] -> [], root
-      | last::rev_path -> root::(Base.List.rev rev_path), last
+upath: UIDENT list(DOT UIDENT { $2 }) {
+      match Base.List.rev $2 with
+      | [] -> [], $1
+      | last::rev_path -> $1::(Base.List.rev rev_path), last
     }
 
 path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
