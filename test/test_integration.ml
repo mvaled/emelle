@@ -1,30 +1,14 @@
 open Base
 open Emelle
 
-type stage =
+type phase =
   | Syntax
   | Desugar
   | Typecheck
   | End (* Used when the test should pass all the stages *)
 [@@deriving compare]
 
-exception Fail of string * stage
-
-let make_test (a, b) = (a, a, b)
-
-let test f stage =
-  List.fold_right ~f:(
-      fun (repr, text, fail_stage) acc ->
-      match f repr, (compare_stage stage fail_stage) = 0 with
-      (* Succeeded, supposed to succeed *)
-      | Ok next, false ->
-         (next, text, fail_stage)::acc
-      (* Failed, supposed to fail *)
-      | Error _, true ->
-         acc
-      | _ ->
-         raise (Fail(text, stage))
-    ) ~init:[]
+exception Fail of string * phase
 
 let optionally f x =
   try Ok (f x) with
@@ -32,50 +16,56 @@ let optionally f x =
   | Parser.Error -> Error (Sequence.return Message.Parser_error)
 
 let tests =
-  List.map ~f:make_test
-    [ "fun", Syntax
-    ; "case", Syntax
-    ; "with", Syntax
-    ; "fun (some x) -> x", Syntax
-    ; "fun -> x", Syntax
-    ; "f", Desugar
-    ; "f x", Desugar
-    ; "fun x -> y", Desugar
-    ; "case x with | y -> y", Desugar
-    ; "let f = fun x -> f x in f", Desugar
-    ; "let f = fun x -> x and g = f in g", Desugar
-    ; "let g = f and f = fun x -> x in g", Desugar
-    ; "case fun x -> x with | x -> x | y -> x", Desugar
-    ; "fun x -> x x", Typecheck
-    ; "fun f -> let g = fun x -> f (x x) in g g", Typecheck
-    ; "let rec g = f and f = fun x -> x in g", End
-    ; "let rec f = fun x -> x and g = f in g", End
-    ; "let rec f = fun x -> f x in f", End
-    ; "case fun x -> x with | x -> x | y -> y", End
-    ; "fun x -> x", End
-    ; "fun x -> fun y -> x", End
-    ; "fun x y -> x", End
-    ; "fun f x -> f x", End
-    ; "fun f x y -> f y x", End
-    ]
+  [ "fun", Syntax
+  ; "case", Syntax
+  ; "with", Syntax
+  ; "fun (some x) -> x", Syntax
+  ; "fun -> x", Syntax
+  ; "f", Desugar
+  ; "f x", Desugar
+  ; "fun x -> y", Desugar
+  ; "case x with | y -> y", Desugar
+  ; "let f = fun x -> f x in f", Desugar
+  ; "let f = fun x -> x and g = f in g", Desugar
+  ; "let g = f and f = fun x -> x in g", Desugar
+  ; "case fun x -> x with | x -> x | y -> x", Desugar
+  ; "fun x -> x x", Typecheck
+  ; "fun f -> let g = fun x -> f (x x) in g g", Typecheck
+  ; "let rec g = f and f = fun x -> x in g", End
+  ; "let rec f = fun x -> x and g = f in g", End
+  ; "let rec f = fun x -> f x in f", End
+  ; "case fun x -> x with | x -> x | y -> y", End
+  ; "fun x -> x", End
+  ; "fun x -> fun y -> x", End
+  ; "fun x y -> x", End
+  ; "fun f x -> f x", End
+  ; "fun f x y -> f y x", End
+  ]
 
-let asts =
-  test (
-      optionally (fun str -> Parser.file Lexer.expr (Lexing.from_string str))
-    ) Syntax tests
+let test_phase f curr_phase input format phase =
+  let result = f format in
+  match result, (compare_phase phase curr_phase) = 0 with
+  | Error _, true -> None
+  | Error _, false -> raise (Fail(input, phase))
+  | Ok _, true -> raise (Fail(input, phase))
+  | Ok next, false -> Some next
 
-let desugar expr =
+let test (input, phase) =
+  let open Option.Monad_infix in
+  let next =
+    test_phase (optionally (fun str ->
+              Parser.file Lexer.expr (Lexing.from_string str)
+      )) Syntax input input phase
+  in
+  next >>= fun next ->
   let env = Env.empty (module String) in
   let desugarer = Desugar.create () in
-  Desugar.term_of_expr desugarer env expr
-
-let terms =
-  test desugar Desugar asts
-
-let typecheck term =
-  let open Result.Monad_infix in
+  let next =
+    test_phase (Desugar.term_of_expr desugarer env) Desugar input next phase
+  in
+  next >>= fun next ->
   let typechecker = Typecheck.create () in
-  Typecheck.infer typechecker term >>| fun _ ->
-  term
+  let next = test_phase (Typecheck.infer typechecker) Typecheck input next phase
+  in next
 
-let terms = test typecheck Typecheck terms
+let _ = List.map ~f:test tests
