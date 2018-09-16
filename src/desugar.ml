@@ -25,28 +25,25 @@ let fresh_register st =
 let find_adt st ((prefix, name) as path) =
   match prefix with
   | [] ->
-     begin match Module.Struct.find_type st.structure name with
+     begin match Module.Struct.find_constr st.structure name with
      | None -> Error (Sequence.return (Message.Unresolved_path path))
-     | Some prefix_adt -> Ok prefix_adt
+     | Some x -> Ok x
      end
   | root::subpath ->
      match Module.Struct.find_mod st.structure root with
      | None -> Error (Sequence.return (Message.Unresolved_path path))
      | Some (prefix, submod) ->
-        let ident = Ident.prefix prefix (Ident.of_path (subpath, name)) in
         match
-          Module.Sig.resolve_path Module.Sig.find_type submod subpath name
+          Module.Sig.resolve_path Module.Sig.find_constr submod subpath name
         with
         | None ->
            Error (Sequence.return (Message.Unresolved_path path))
-        | Some (Type.Abstract _) ->
-           Error (Sequence.return (Message.Abstract_type ident))
-        | Some (Type.Adt adt) -> Ok (ident, adt)
+        | Some adt -> Ok (Ident.prefix prefix (Ident.of_path (subpath, name)), adt)
 
-let idx_of_constr ident adt con =
+let idx_of_constr adt con =
   match Hashtbl.find adt.Type.constr_names con with
   | Some idx -> Ok idx
-  | None -> Error (Sequence.return (Message.Unknown_constr(ident, con)))
+  | None -> Error (Sequence.return (Message.Unreachable))
 
 (** Convert a pattern from the AST representation to the representation defined
     in this module, returning errors when constructors or types aren't defined.
@@ -54,15 +51,15 @@ let idx_of_constr ident adt con =
 let rec pattern_of_ast_pattern st env reg (ann, node) =
   let open Result.Monad_infix in
   let result = match node with
-    | Ast.Con(typename, con, pats) ->
+    | Ast.Con((_, constr_name) as constr_path, pats) ->
        let f next acc =
          acc >>= fun (pats, env) ->
          let reg = fresh_register st in
          pattern_of_ast_pattern st env reg next >>| fun (pat, env) ->
          (pat::pats, env)
        in
-       find_adt st typename >>= fun (ident, adt) ->
-       idx_of_constr ident adt con >>= fun idx ->
+       find_adt st constr_path >>= fun (ident, adt) ->
+       idx_of_constr adt constr_name >>= fun idx ->
        List.fold_right ~f:f ~init:(Ok ([], env)) pats >>| fun (pats, env) ->
        ((Con(ident, idx, pats), reg), env)
     | Ast.Var id ->

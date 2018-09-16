@@ -2,12 +2,14 @@ open Base
 
 module Sig = struct
   type t =
-    { types : (string, Type.decl) Hashtbl.t
+    { constrs : (string, Type.adt) Hashtbl.t
+    ; types : (string, Type.decl) Hashtbl.t
     ; values : (string, Type.t) Hashtbl.t
     ; submodules : (string, t) Hashtbl.t }
 
   let find f self name = Hashtbl.find (f self) name
 
+  let find_constr = find (fun self -> self.constrs)
   let find_type = find (fun self -> self.types)
   let find_val = find (fun self -> self.values)
   let find_mod = find (fun self -> self.submodules)
@@ -23,14 +25,16 @@ end
 
 module Struct = struct
   type t =
-    { types : (string, Type.adt) Hashtbl.t
+    { constrs : (string, Type.adt) Hashtbl.t
+    ; types : (string, Type.adt) Hashtbl.t
     ; values : (string, Type.t) Hashtbl.t
     ; submodules : (string, Sig.t) Hashtbl.t
     ; parent : t option
     ; prefix : Ident.t option }
 
   let create prefix =
-    { types = Hashtbl.create (module String)
+    { constrs = Hashtbl.create (module String)
+    ; types = Hashtbl.create (module String)
     ; values = Hashtbl.create (module String)
     ; submodules = Hashtbl.create (module String)
     ; parent = None
@@ -53,12 +57,14 @@ module Struct = struct
        | Some parent -> find f parent name
        | None -> None
 
+  let find_constr = find (fun self -> self.constrs)
   let find_type = find (fun self -> self.types)
   let find_val = find (fun self -> self.values)
   let find_mod = find (fun self -> self.submodules)
 
   let to_sig self =
-    { Sig.types = Hashtbl.map self.types ~f:(fun x -> Type.Adt x)
+    { Sig.constrs = self.constrs
+    ; Sig.types = Hashtbl.map self.types ~f:(fun x -> Type.Adt x)
     ; Sig.values = self.values
     ; Sig.submodules = self.submodules }
 end

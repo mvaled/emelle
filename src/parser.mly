@@ -42,7 +42,15 @@ expr_eof: expr EOF { $1 };
 monotype_eof: monotype EOF { $1 };
 adt_eof: adt EOF { $1 }
 
-%inline path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
+upath_helper: UIDENT list(DOT UIDENT { $2 }) { $1, $2 }
+upath: upath_helper {
+      let (root, list) = $1 in
+      match Base.List.rev list with
+      | [] -> [], root
+      | last::rev_path -> root::(Base.List.rev rev_path), last
+    }
+
+path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
 
 adt:
   | LIDENT list(LIDENT) EQUALS option(BAR) separated_list(BAR, constr) {
@@ -117,15 +125,15 @@ expr_atom:
   ;
 
 pattern:
-  | typename = path COLONCOLON con = UIDENT args = nonempty_list(pattern) {
+  | upath nonempty_list(pattern) {
         (($symbolstartpos, $endpos)
-        , Ast.Con(typename, con, args))
+        , Ast.Con($1, $2))
       }
   | pattern_2 { $1 }
 
 pattern_2:
-  | typename = path COLONCOLON con = UIDENT {
-        (($symbolstartpos, $endpos), Ast.Con(typename, con, []))
+  | upath {
+        (($symbolstartpos, $endpos), Ast.Con($1, []))
       }
   | LIDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
   | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }
