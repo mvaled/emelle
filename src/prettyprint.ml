@@ -7,14 +7,12 @@ let create () = { buffer = Buffer.create 12 }
 
 let to_string pp = Buffer.contents pp.buffer
 
-let print_ident pp = function
+let rec print_ident pp = function
   | Ident.Local str ->
      Buffer.add_string pp.buffer str
-  | Ident.Path(list, str) ->
-     List.iter ~f:(fun x ->
-         Buffer.add_string pp.buffer x;
-         Buffer.add_string pp.buffer "::"
-       ) list;
+  | Ident.Path(id, str) ->
+     print_ident pp id;
+     Buffer.add_string pp.buffer "::";
      Buffer.add_string pp.buffer str
 
 let with_necessary_parens f pp parent_prec prec =
