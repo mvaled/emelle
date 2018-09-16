@@ -14,7 +14,7 @@ module Sig = struct
 
   let rec resolve_path f self path name =
     match path with
-    | [] -> find f self name
+    | [] -> f self name
     | root::subpath ->
        match find_mod self root with
        | Some submod -> resolve_path f submod subpath name

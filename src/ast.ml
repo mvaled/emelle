@@ -1,11 +1,13 @@
 open Base
 
+type path = string list * string
+
 type monotype =
   | TApp of monotype * monotype
   | TArrow
   | TFloat
   | TInt
-  | TVar of Ident.t
+  | TVar of path
 
 type polytype = Forall of string list * monotype
 
@@ -22,7 +24,7 @@ and 'a expr' =
   | Lam of 'a lambda_case * 'a lambda_case list
   | Let of ('a pattern * 'a expr) list * 'a expr
   | Let_rec of (string * 'a expr) list * 'a expr
-  | Var of Ident.t
+  | Var of path
 and 'a lambda_case = 'a pattern * 'a pattern list * 'a expr
 
 type adt =

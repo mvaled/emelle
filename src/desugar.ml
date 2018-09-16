@@ -2,9 +2,10 @@ open Base
 
 type 'cmp t =
   { mutable vargen : int
-  ; typedefs : (Ident.t, Type.decl, 'cmp) Env.t }
+  ; typedefs : (Ident.t, Type.decl, 'cmp) Env.t
+  ; structure : Module.Struct.t }
 
-(* Tag pattern with register *)
+(* Tag pattern with register to store its result *)
 type 'a pattern = 'a pattern' * int
 and 'a pattern' =
   | Ann of 'a * 'a pattern
@@ -14,7 +15,8 @@ and 'a pattern' =
 
 let create () =
   { vargen = 0
-  ; typedefs = Env.empty (module Ident) }
+  ; typedefs = Env.empty (module Ident)
+  ; structure = Module.Struct.create () }
 
 let fresh_register st =
   st.vargen <- st.vargen + 1;
@@ -217,14 +219,33 @@ let rec term_of_expr st env (ann, node) =
            Term.Let_rec(bindings, body)
          ) env
 
-    | Ast.Var id ->
-       begin match id with
-       | Local str ->
-          begin match Env.find env str with
+    | Ast.Var ((prefix, name) as path) ->
+       match prefix with
+       | [] -> (* Unqualified name *)
+          begin match Env.find env name with
+          (* Found in the local environment *)
           | Some (reg, _) -> Ok (Term.Var reg)
-          | None -> Error (Sequence.return (Message.Unresolved_id id))
+          | None ->
+             (* Search in the current structure *)
+             match Module.Struct.find_val st.structure name with
+             | Some _ ->
+                begin match st.structure.prefix with
+                | None -> Ok (Term.Extern_var (Ident.of_path path))
+                | Some prefix ->
+                   Ok (Term.Extern_var (Ident.Path(prefix, name)))
+                end
+             | None -> Error (Sequence.return (Message.Unresolved_path path))
           end
-       | Path _ -> Error (Sequence.return (Message.Unimplemented "path"))
-       end
+       | root::subpath -> (* Qualified name *)
+          match Module.Struct.find_mod st.structure root with
+          | None -> Error (Sequence.return (Message.Unresolved_path path))
+          | Some (prefix, siggy) ->
+             match
+               Module.Sig.resolve_path Module.Sig.find_val siggy subpath name
+             with
+             | Some _ ->
+                Ok (Term.Extern_var
+                      (Ident.prefix prefix (Ident.of_path (subpath, name))))
+             | None -> Error (Sequence.return (Message.Unresolved_path path))
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })

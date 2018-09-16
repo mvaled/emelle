@@ -23,9 +23,10 @@
 %token COMMA
 %token DOT
 %token EQUALS
+%token STAR
 %token UNDERSCORE
 
-%token <string> IDENT
+%token <string> UIDENT LIDENT
 
 %token EOF
 
@@ -41,15 +42,17 @@ expr_eof: expr EOF { $1 };
 monotype_eof: monotype EOF { $1 };
 adt_eof: adt EOF { $1 }
 
+path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
+
 adt:
-  | IDENT list(IDENT) EQUALS option(BAR) separated_list(BAR, constr) {
+  | LIDENT list(LIDENT) EQUALS option(BAR) separated_list(BAR, constr) {
       Ast.{ name = $1; typeparams = $2; constrs = $5 }
     }
   ;
 
-constr: IDENT list(monotype) { ($1, $2) };
+constr: UIDENT separated_list(STAR, monotype) { ($1, $2) };
 
-polytype: FORALL list(IDENT) DOT monotype { Ast.Forall($2, $4) };
+polytype: FORALL list(LIDENT) DOT monotype { Ast.Forall($2, $4) };
 
 monotype:
   | monotype_app ARROW monotype { Ast.TApp(Ast.TApp(Ast.TArrow, $1), $3) }
@@ -62,7 +65,7 @@ monotype_app:
   ;
 
 monotype_atom:
-  | IDENT { Ast.TVar (Ident.Local $1) }
+  | path { Ast.TVar $1 }
   | LPARENS ARROW RPARENS { Ast.TArrow }
   | LPARENS monotype RPARENS { $2 }
   ;
@@ -100,7 +103,7 @@ binding:
   ;
 
 rec_binding:
-  | IDENT EQUALS expr { ($1, $3) }
+  | LIDENT EQUALS expr { ($1, $3) }
   ;
 
 expr_app:
@@ -109,21 +112,21 @@ expr_app:
   ;
 
 expr_atom:
-  | IDENT { (($symbolstartpos, $endpos), Ast.Var (Ident.Local $1)) }
+  | path { (($symbolstartpos, $endpos), Ast.Var $1) }
   | LPARENS expr RPARENS { $2 }
   ;
 
 pattern:
-  | typename = IDENT COLONCOLON con = IDENT {
+  | typename = LIDENT COLONCOLON con = UIDENT {
         (($symbolstartpos, $endpos), Ast.Con(Ident.Local typename, con, []))
       }
   | LPARENS
-      typename = IDENT COLONCOLON con = IDENT arg = pattern args = list(pattern)
+      typename = LIDENT COLONCOLON con = UIDENT args = nonempty_list(pattern)
     RPARENS {
         (($symbolstartpos, $endpos)
-        , Ast.Con(Ident.Local typename, con, arg::args))
+        , Ast.Con(Ident.Local typename, con, args))
       }
-  | IDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
+  | LIDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
   | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }
   | LPARENS pattern RPARENS { $2 }
   ;

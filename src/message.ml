@@ -12,4 +12,5 @@ type error =
   | Unknown_constr of Ident.t * string
   | Unreachable
   | Unresolved_id of Ident.t
+  | Unresolved_path of (string list * string)
   | Unresolved_type of Ident.t

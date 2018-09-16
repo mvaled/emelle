@@ -2,13 +2,15 @@ open Base
 
 type t =
   { types : (Ident.t, Type.adt) Hashtbl.t
-  ; mutable env : (int, Type.t) Hashtbl.t
+  ; extern_env : (Ident.t, Type.t) Hashtbl.t
+  ; env : (int, Type.t) Hashtbl.t
   ; mutable level : int
   ; tvargen : Type.vargen
   ; kvargen : Kind.vargen }
 
 let create () =
   { types = Hashtbl.create (module Ident)
+  ; extern_env = Hashtbl.create (module Ident)
   ; env = Hashtbl.create (module Int)
   ; level = 0
   ; tvargen = Type.create_vargen ()
@@ -171,6 +173,12 @@ let rec infer checker =
            Ok (ty::acc)
          ) ~init:(Ok []) cases
      in types >>= fun types -> unify_many checker var types >>| fun () -> var
+
+  | Term.Extern_var id ->
+     begin match Hashtbl.find checker.extern_env id with
+     | Some ty -> Ok (inst checker (checker.level + 1) ty)
+     | None -> Error (Sequence.return Message.Unreachable)
+     end
 
   | Term.Lam(id, body) ->
      let var = fresh_tvar checker in

@@ -7,18 +7,18 @@
   let keywords =
     Hashtbl.of_alist_exn
       (module String)
-      [ ("and", AND)
-      ; ("case", CASE)
-      ; ("else", ELSE)
-      ; ("forall", FORALL)
-      ; ("fun", FUN)
-      ; ("if", IF)
-      ; ("in", IN)
-      ; ("let", LET)
-      ; ("rec", REC)
-      ; ("then", THEN)
-      ; ("type", TYPE)
-      ; ("with", WITH) ]
+      [ "and", AND
+      ; "case", CASE
+      ; "else", ELSE
+      ; "forall", FORALL
+      ; "fun", FUN
+      ; "if", IF
+      ; "in", IN
+      ; "let", LET
+      ; "rec", REC
+      ; "then", THEN
+      ; "type", TYPE
+      ; "with", WITH ]
 }
 
 let whitespace = [' ' '\t']
@@ -26,7 +26,8 @@ let digit = ['0'-'9']
 let upper = ['A'-'Z']
 let lower = ['a'-'z']
 let alphanum = upper | lower | digit
-let ident = (upper | lower) (alphanum | '_' | '\'')*
+let uident = upper (alphanum | '_' | '\'')*
+let lident = lower (alphanum | '_' | '\'')*
 
 rule expr = parse
   | whitespace { expr lexbuf }
@@ -40,11 +41,13 @@ rule expr = parse
   | ',' { COMMA }
   | '.' { DOT }
   | '=' { EQUALS }
+  | '*' { STAR }
   | '_' { UNDERSCORE }
-  | ident as str {
+  | uident as str { UIDENT str }
+  | lident as str {
       match Hashtbl.find keywords str with
       | Some keyword -> keyword
-      | None -> IDENT str
+      | None -> LIDENT str
     }
   | eof { EOF }
   | _ { raise (Error (Lexing.lexeme lexbuf)) }

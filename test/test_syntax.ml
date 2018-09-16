@@ -26,7 +26,7 @@ let valid_exprs =
   [ "f x"
   ; "let x = y in x"
   ; "fun x y -> y"
-  ; "fun (Option::Some x) -> x"
+  ; "fun (option::Some x) -> x"
   ; "  y  x  cs w  uii8'9"
   ; "case x with | x -> x"
   ; "case x with x -> x"
@@ -48,11 +48,11 @@ let valid_monotypes =
   ; "a b c"
   ; "(a -> b) -> f a -> f b"
   ; "m a -> (a -> m b) -> m b"
-  ; "Option a"
-  ; "Either a b"
-  ; "Either Foo Bar"
-  ; "IO Unit"
-  ; "Unit"
+  ; "option a"
+  ; "either a b"
+  ; "either foo bar"
+  ; "io unit"
+  ; "unit"
   ; "a' b' c'"
   ]
 
@@ -68,23 +68,23 @@ let invalid_monotypes =
   ]
 
 let valid_adts =
-  [ "Void ="
-  ; "Void = |"
-  ; "Unit = Unit"
-  ; "Unit = | Unit"
-  ; "Option a = Some a | None"
-  ; "List a = | Cons a (List a) | Nil"
-  ; "Bool = False | True"
-  ; "Either e a = Left e | Right a"
-  ; "StateT s m a = StateT s -> m (Product a s)"
+  [ "void ="
+  ; "void = |"
+  ; "unit = Unit"
+  ; "unit = | Unit"
+  ; "option a = Some a | None"
+  ; "list a = | Cons a * list a | Nil"
+  ; "bool = False | True"
+  ; "either e a = Left e | Right a"
+  ; "stateT s m a = StateT s -> m (product a s)"
   ]
 
 let invalid_adts =
   [ ""
   ; "= "
   ; "= Unit"
-  ; "X = Y |"
-  ; "TupleSyntaxNotSupported a b = Foo (a, b)"
+  ; "x = Y |"
+  ; "tupleSyntaxNotSupported a b = Foo (a, b)"
   ]
 
 let () =
