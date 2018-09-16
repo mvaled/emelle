@@ -30,15 +30,12 @@ let find_adt st ((prefix, name) as path) =
      | Some x -> Ok x
      end
   | root::subpath ->
-     match Module.Struct.find_mod st.structure root with
+     match
+       Module.Struct.resolve_path
+         Module.Sig.find_constr st.structure root subpath name
+     with
      | None -> Error (Sequence.return (Message.Unresolved_path path))
-     | Some (prefix, submod) ->
-        match
-          Module.Sig.resolve_path Module.Sig.find_constr submod subpath name
-        with
-        | None ->
-           Error (Sequence.return (Message.Unresolved_path path))
-        | Some adt -> Ok (Ident.prefix prefix (Ident.of_path (subpath, name)), adt)
+     | Some x -> Ok x
 
 let idx_of_constr adt con =
   match Hashtbl.find adt.Type.constr_names con with
@@ -247,15 +244,11 @@ let rec term_of_expr st env (ann, node) =
              | None -> Error (Sequence.return (Message.Unresolved_path path))
           end
        | root::subpath -> (* Qualified name *)
-          match Module.Struct.find_mod st.structure root with
+          match
+            Module.Struct.resolve_path
+              Module.Sig.find_val st.structure root subpath name
+          with
           | None -> Error (Sequence.return (Message.Unresolved_path path))
-          | Some (prefix, siggy) ->
-             match
-               Module.Sig.resolve_path Module.Sig.find_val siggy subpath name
-             with
-             | Some _ ->
-                Ok (Term.Extern_var
-                      (Ident.prefix prefix (Ident.of_path (subpath, name))))
-             | None -> Error (Sequence.return (Message.Unresolved_path path))
+          | Some (ident, _) -> Ok (Term.Extern_var ident)
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })

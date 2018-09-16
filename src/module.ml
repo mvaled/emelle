@@ -62,6 +62,17 @@ module Struct = struct
   let find_val = find (fun self -> self.values)
   let find_mod = find (fun self -> self.submodules)
 
+  (** [resolve_path f strct root subpath name] searches for a signature of name
+      [root] in the scope of [strct], then calls [Sig.resolve_path f] on the
+      found signature, the subpath, and the name *)
+  let resolve_path f self root subpath name =
+    match find_mod self root with
+    | None -> None
+    | Some (prefix, submod) ->
+       match Sig.resolve_path f submod subpath name with
+       | None -> None
+       | Some x -> Some (Ident.prefix prefix (Ident.of_path (subpath, name)), x)
+
   let to_sig self =
     { Sig.constrs = self.constrs
     ; Sig.types = Hashtbl.map self.types ~f:(fun x -> Type.Adt x)
