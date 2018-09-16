@@ -42,7 +42,7 @@ expr_eof: expr EOF { $1 };
 monotype_eof: monotype EOF { $1 };
 adt_eof: adt EOF { $1 }
 
-path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
+%inline path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
 
 adt:
   | LIDENT list(LIDENT) EQUALS option(BAR) separated_list(BAR, constr) {
@@ -95,7 +95,7 @@ case:
   ;
 
 lambda_case:
-  | pattern list(pattern) ARROW expr { ($1, $2, $4) }
+  | pattern_2 list(pattern_2) ARROW expr { ($1, $2, $4) }
   ;
 
 binding:
@@ -117,14 +117,15 @@ expr_atom:
   ;
 
 pattern:
-  | typename = LIDENT COLONCOLON con = UIDENT {
-        (($symbolstartpos, $endpos), Ast.Con(Ident.Local typename, con, []))
-      }
-  | LPARENS
-      typename = LIDENT COLONCOLON con = UIDENT args = nonempty_list(pattern)
-    RPARENS {
+  | typename = path COLONCOLON con = UIDENT args = nonempty_list(pattern) {
         (($symbolstartpos, $endpos)
-        , Ast.Con(Ident.Local typename, con, args))
+        , Ast.Con(typename, con, args))
+      }
+  | pattern_2 { $1 }
+
+pattern_2:
+  | typename = path COLONCOLON con = UIDENT {
+        (($symbolstartpos, $endpos), Ast.Con(typename, con, []))
       }
   | LIDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
   | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }

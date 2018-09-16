@@ -29,12 +29,12 @@ module Struct = struct
     ; parent : t option
     ; prefix : Ident.t option }
 
-  let create () =
+  let create prefix =
     { types = Hashtbl.create (module String)
     ; values = Hashtbl.create (module String)
     ; submodules = Hashtbl.create (module String)
     ; parent = None
-    ; prefix = None }
+    ; prefix }
 
   (** [find f self name]
 

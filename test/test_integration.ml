@@ -59,7 +59,8 @@ let test (input, phase) =
   in
   next >>= fun next ->
   let env = Env.empty (module String) in
-  let desugarer = Desugar.create () in
+  let structure = Module.Struct.create None in
+  let desugarer = Desugar.create structure in
   let next =
     test_phase (Desugar.term_of_expr desugarer env) Desugar input next phase
   in

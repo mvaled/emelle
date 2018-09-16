@@ -13,7 +13,7 @@ type polytype = Forall of string list * monotype
 
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =
-  | Con of Ident.t * string * 'a pattern list
+  | Con of path * string * 'a pattern list
   | Var of string
   | Wild
 

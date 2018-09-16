@@ -13,28 +13,40 @@ and 'a pattern' =
   | Con of Ident.t * int * 'a pattern list
   | Wild
 
-let create () =
+let create structure =
   { vargen = 0
   ; typedefs = Env.empty (module Ident)
-  ; structure = Module.Struct.create () }
+  ; structure }
 
 let fresh_register st =
   st.vargen <- st.vargen + 1;
   st.vargen - 1
 
-let find_typedef st typename =
-  match Env.find st.typedefs typename with
-  | None -> Error (Sequence.return (Message.Unresolved_type typename))
-  | Some (Type.Abstract _, _) ->
-     Error (Sequence.return (Message.Abstract_type typename))
-  | Some (Type.Adt adt, _) -> Ok adt
+let find_adt st ((prefix, name) as path) =
+  match prefix with
+  | [] ->
+     begin match Module.Struct.find_type st.structure name with
+     | None -> Error (Sequence.return (Message.Unresolved_path path))
+     | Some prefix_adt -> Ok prefix_adt
+     end
+  | root::subpath ->
+     match Module.Struct.find_mod st.structure root with
+     | None -> Error (Sequence.return (Message.Unresolved_path path))
+     | Some (prefix, submod) ->
+        let ident = Ident.prefix prefix (Ident.of_path (subpath, name)) in
+        match
+          Module.Sig.resolve_path Module.Sig.find_type submod subpath name
+        with
+        | None ->
+           Error (Sequence.return (Message.Unresolved_path path))
+        | Some (Type.Abstract _) ->
+           Error (Sequence.return (Message.Abstract_type ident))
+        | Some (Type.Adt adt) -> Ok (ident, adt)
 
-let idx_of_constr st typename con =
-  let open Result.Monad_infix in
-  find_typedef st typename >>= fun adt ->
-  match Hashtbl.find adt.constr_names con with
+let idx_of_constr ident adt con =
+  match Hashtbl.find adt.Type.constr_names con with
   | Some idx -> Ok idx
-  | None -> Error (Sequence.return (Message.Unknown_constr(typename, con)))
+  | None -> Error (Sequence.return (Message.Unknown_constr(ident, con)))
 
 (** Convert a pattern from the AST representation to the representation defined
     in this module, returning errors when constructors or types aren't defined.
@@ -49,9 +61,10 @@ let rec pattern_of_ast_pattern st env reg (ann, node) =
          pattern_of_ast_pattern st env reg next >>| fun (pat, env) ->
          (pat::pats, env)
        in
-       idx_of_constr st typename con >>= fun idx ->
+       find_adt st typename >>= fun (ident, adt) ->
+       idx_of_constr ident adt con >>= fun idx ->
        List.fold_right ~f:f ~init:(Ok ([], env)) pats >>| fun (pats, env) ->
-       ((Con(typename, idx, pats), reg), env)
+       ((Con(ident, idx, pats), reg), env)
     | Ast.Var id ->
        begin match Env.add env id reg with
        | Some env -> Ok ((As((Wild, reg), id), reg), env)
