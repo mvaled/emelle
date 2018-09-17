@@ -6,7 +6,7 @@ type error =
   | Lexer_error of string
   | Mismatched_arity
   | Parser_error
-  | Redefined_id of Ident.t
+  | Redefined_name of string
   | Type_unification_fail of Type.t * Type.t
   | Unimplemented of string
   | Unknown_constr of Ident.t * string

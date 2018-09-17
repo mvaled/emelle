@@ -44,11 +44,11 @@ let rec pattern_of_ast_pattern st env reg (ann, node) =
           List.fold_right ~f:f ~init:(Ok ([], env)) pats >>| fun (pats, env) ->
           ((Con(typename, idx, pats), reg), env)
        end
-    | Ast.Var id ->
-       begin match Env.add env id reg with
-       | Some env -> Ok ((As((Wild, reg), id), reg), env)
+    | Ast.Var name ->
+       begin match Env.add env name reg with
+       | Some env -> Ok ((As((Wild, reg), name), reg), env)
        | None ->
-          Error (Sequence.return (Message.Redefined_id (Ident.Local id)))
+          Error (Sequence.return (Message.Redefined_name name))
        end
     | Ast.Wild -> Ok ((Wild, reg), env)
   in result >>| fun (pat, env) -> ((Ann(ann, pat), reg), env)
@@ -194,7 +194,7 @@ let rec term_of_expr st env (ann, node) =
              match Env.add env str reg with
              | Some env -> Ok ((reg, expr)::list, env)
              | None ->
-                Error (Sequence.return (Message.Redefined_id (Ident.Local str)))
+                Error (Sequence.return (Message.Redefined_name str))
            ) ~init:(Ok ([], env)) bindings;
        in
        bindings >>= fun (bindings, env) ->

@@ -25,8 +25,8 @@ let rec find f self name =
   match Hashtbl.find (f self) name with
   | Some data ->
      begin match self.prefix with
-     | Some prefix -> Some (Ident.Path(prefix, name), data)
-     | None -> Some (Ident.Local name, data)
+     | Some prefix -> Some (Ident.Dot(prefix, name), data)
+     | None -> Some (Ident.Root name, data)
      end
   | None ->
      match self.parent with
@@ -38,8 +38,8 @@ let find_constr self name =
   | None -> None
   | Some (typename, idx) ->
      match self.prefix with
-     | None -> Some (Ident.Local typename, idx)
-     | Some prefix -> Some (Ident.Path(prefix, typename), idx)
+     | None -> Some (Ident.Root typename, idx)
+     | Some prefix -> Some (Ident.Dot(prefix, typename), idx)
 
 let find_type self name =
   match find (fun self -> self.types) self name with

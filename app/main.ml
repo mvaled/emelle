@@ -5,8 +5,8 @@ open Emelle
 let () =
   let open Result.Monad_infix in
   match
-    let chan = Lexing.from_channel stdin in
-    let ast = Parser.expr_eof Lexer.expr chan in
+    let lexbuf = Lexing.from_channel stdin in
+    let ast = Parser.expr_eof Lexer.expr lexbuf in
     let env = Env.empty (module String) in
     let structure = Module.create None in
     let desugarer = Desugar.create structure in

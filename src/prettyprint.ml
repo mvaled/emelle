@@ -8,9 +8,9 @@ let create () = { buffer = Buffer.create 12 }
 let to_string pp = Buffer.contents pp.buffer
 
 let rec print_ident pp = function
-  | Ident.Local str ->
+  | Ident.Root str ->
      Buffer.add_string pp.buffer str
-  | Ident.Path(id, str) ->
+  | Ident.Dot(id, str) ->
      print_ident pp id;
      Buffer.add_string pp.buffer "::";
      Buffer.add_string pp.buffer str
