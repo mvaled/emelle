@@ -1,3 +1,6 @@
+(** A mutable hierarchal environment that keeps track of its siblings, used to
+    resolve paths to fully qualified identifiers *)
+
 open Base
 
 type t =

@@ -96,12 +96,12 @@ let rec decision_tree_of_matrix env =
      | None -> Ok (Leaf row.action) (* Case 2 *)
      | Some (typename, i) ->
         (* Case 3 *)
-        match Env.find env typename with
+        match Symtable.find_typedef env typename with
         | None ->
            Error (Sequence.return (Message.Unresolved_type typename))
-        | Some (Type.Abstract _, _) ->
+        | Some (Type.Abstract _) ->
            Error (Sequence.return (Message.Abstract_type typename))
-        | Some (Type.Adt alg, _) ->
+        | Some (Type.Adt alg) ->
            let jump_tbl = Hashtbl.create (module Int) in
            let default = default_matrix rows in
            let result =

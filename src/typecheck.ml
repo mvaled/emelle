@@ -2,15 +2,15 @@ open Base
 
 type t =
   { types : (Ident.t, Type.adt) Hashtbl.t
-  ; extern_env : (Ident.t, Type.t) Hashtbl.t
+  ; symtable : Symtable.t
   ; env : (int, Type.t) Hashtbl.t
   ; mutable level : int
   ; tvargen : Type.vargen
   ; kvargen : Kind.vargen }
 
-let create () =
+let create symtable =
   { types = Hashtbl.create (module Ident)
-  ; extern_env = Hashtbl.create (module Ident)
+  ; symtable
   ; env = Hashtbl.create (module Int)
   ; level = 0
   ; tvargen = Type.create_vargen ()
@@ -175,9 +175,9 @@ let rec infer checker =
      in types >>= fun types -> unify_many checker var types >>| fun () -> var
 
   | Term.Extern_var id ->
-     begin match Hashtbl.find checker.extern_env id with
-     | Some ty -> Ok (inst checker (checker.level + 1) ty)
-     | None -> Error (Sequence.return Message.Unreachable)
+     begin match Symtable.find_val checker.symtable id with
+     | Some (ty, _) -> Ok (inst checker (checker.level + 1) ty)
+     | None -> Error (Sequence.return (Message.Unresolved_id id))
      end
 
   | Term.Lam(id, body) ->

@@ -1,3 +1,5 @@
+(** The module of fully-qualified identifers *)
+
 open Base
 
 module T = struct

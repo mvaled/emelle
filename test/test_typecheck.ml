@@ -24,7 +24,8 @@ let rec is_mono = function
 
 let () =
   let f x =
-    let checker = Typecheck.create () in
+    let symtable = Symtable.create () in
+    let checker = Typecheck.create symtable in
     match Typecheck.kind_of_type checker x with
     | Ok kind -> assert (is_mono kind)
     | Error _ -> assert false
@@ -32,7 +33,8 @@ let () =
 
 let () =
   let f x =
-    let checker = Typecheck.create () in
+    let symtable = Symtable.create () in
+    let checker = Typecheck.create symtable in
     match Typecheck.kind_of_type checker x with
     | Ok kind -> assert (not (is_mono kind))
     | Error _ -> assert false
