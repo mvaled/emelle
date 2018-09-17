@@ -3,7 +3,7 @@ open Base
 type 'cmp t =
   { mutable vargen : int
   ; typedefs : (Ident.t, Type.decl, 'cmp) Env.t
-  ; structure : Module.Struct.t }
+  ; structure : Module.t }
 
 (* Tag pattern with register to store its result *)
 type 'a pattern = 'a pattern' * int
@@ -22,43 +22,28 @@ let fresh_register st =
   st.vargen <- st.vargen + 1;
   st.vargen - 1
 
-let find_adt st ((prefix, name) as path) =
-  match prefix with
-  | [] ->
-     begin match Module.Struct.find_constr st.structure name with
-     | None -> Error (Sequence.return (Message.Unresolved_path path))
-     | Some x -> Ok x
-     end
-  | root::subpath ->
-     match
-       Module.Struct.resolve_path
-         Module.Sig.find_constr st.structure root subpath name
-     with
-     | None -> Error (Sequence.return (Message.Unresolved_path path))
-     | Some x -> Ok x
-
-let idx_of_constr adt con =
-  match Hashtbl.find adt.Type.constr_names con with
-  | Some idx -> Ok idx
-  | None -> Error (Sequence.return (Message.Unreachable))
-
 (** Convert a pattern from the AST representation to the representation defined
     in this module, returning errors when constructors or types aren't defined.
  *)
 let rec pattern_of_ast_pattern st env reg (ann, node) =
   let open Result.Monad_infix in
-  let result = match node with
-    | Ast.Con((_, constr_name) as constr_path, pats) ->
+  let result =
+    match node with
+    | Ast.Con(constr_path, pats) ->
        let f next acc =
          acc >>= fun (pats, env) ->
          let reg = fresh_register st in
          pattern_of_ast_pattern st env reg next >>| fun (pat, env) ->
          (pat::pats, env)
        in
-       find_adt st constr_path >>= fun (ident, adt) ->
-       idx_of_constr adt constr_name >>= fun idx ->
-       List.fold_right ~f:f ~init:(Ok ([], env)) pats >>| fun (pats, env) ->
-       ((Con(ident, idx, pats), reg), env)
+       begin match
+         Module.resolve_path Module.find_constr st.structure constr_path
+       with
+       | None -> Error (Sequence.return (Message.Unresolved_path constr_path))
+       | Some (typename, idx) ->
+          List.fold_right ~f:f ~init:(Ok ([], env)) pats >>| fun (pats, env) ->
+          ((Con(typename, idx, pats), reg), env)
+       end
     | Ast.Var id ->
        begin match Env.add env id reg with
        | Some env -> Ok ((As((Wild, reg), id), reg), env)
@@ -234,21 +219,13 @@ let rec term_of_expr st env (ann, node) =
           | Some (reg, _) -> Ok (Term.Var reg)
           | None ->
              (* Search in the current structure *)
-             match Module.Struct.find_val st.structure name with
-             | Some _ ->
-                begin match st.structure.prefix with
-                | None -> Ok (Term.Extern_var (Ident.of_path path))
-                | Some prefix ->
-                   Ok (Term.Extern_var (Ident.Path(prefix, name)))
-                end
+             match Module.find_val st.structure name with
+             | Some ident -> Ok (Term.Extern_var ident)
              | None -> Error (Sequence.return (Message.Unresolved_path path))
           end
-       | root::subpath -> (* Qualified name *)
-          match
-            Module.Struct.resolve_path
-              Module.Sig.find_val st.structure root subpath name
-          with
+       | _ -> (* Qualified name *)
+          match Module.resolve_path Module.find_val st.structure path with
           | None -> Error (Sequence.return (Message.Unresolved_path path))
-          | Some (ident, _) -> Ok (Term.Extern_var ident)
+          | Some ident -> Ok (Term.Extern_var ident)
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })

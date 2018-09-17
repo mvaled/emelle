@@ -1,81 +1,73 @@
 open Base
 
-module Sig = struct
-  type t =
-    { constrs : (string, Type.adt) Hashtbl.t
-    ; types : (string, Type.decl) Hashtbl.t
-    ; values : (string, Type.t) Hashtbl.t
-    ; submodules : (string, t) Hashtbl.t }
+type t =
+  { constrs : (string, string * int) Hashtbl.t
+  ; types : (string, unit) Hashtbl.t
+  ; values : (string, unit) Hashtbl.t
+  ; submodules : (string, t) Hashtbl.t
+  ; parent : t option
+  ; prefix : Ident.t option }
 
-  let find f self name = Hashtbl.find (f self) name
+let create prefix =
+  { constrs = Hashtbl.create (module String)
+  ; types = Hashtbl.create (module String)
+  ; values = Hashtbl.create (module String)
+  ; submodules = Hashtbl.create (module String)
+  ; parent = None
+  ; prefix }
 
-  let find_constr = find (fun self -> self.constrs)
-  let find_type = find (fun self -> self.types)
-  let find_val = find (fun self -> self.values)
-  let find_mod = find (fun self -> self.submodules)
+(** [find f self name]
 
-  let rec resolve_path f self path name =
-    match path with
-    | [] -> f self name
-    | root::subpath ->
-       match find_mod self root with
-       | Some submod -> resolve_path f submod subpath name
-       | None -> None
-end
+    Given some function [f] from [self] to a hash table, find the value of key
+    [name] in the hash table, and return it paired with the fully qualified
+    identifier path *)
+let rec find f self name =
+  match Hashtbl.find (f self) name with
+  | Some data ->
+     begin match self.prefix with
+     | Some prefix -> Some (Ident.Path(prefix, name), data)
+     | None -> Some (Ident.Local name, data)
+     end
+  | None ->
+     match self.parent with
+     | Some parent -> find f parent name
+     | None -> None
 
-module Struct = struct
-  type t =
-    { constrs : (string, Type.adt) Hashtbl.t
-    ; types : (string, Type.adt) Hashtbl.t
-    ; values : (string, Type.t) Hashtbl.t
-    ; submodules : (string, Sig.t) Hashtbl.t
-    ; parent : t option
-    ; prefix : Ident.t option }
+let find_constr self name =
+  match Hashtbl.find self.constrs name with
+  | None -> None
+  | Some (typename, idx) ->
+     match self.prefix with
+     | None -> Some (Ident.Local typename, idx)
+     | Some prefix -> Some (Ident.Path(prefix, typename), idx)
 
-  let create prefix =
-    { constrs = Hashtbl.create (module String)
-    ; types = Hashtbl.create (module String)
-    ; values = Hashtbl.create (module String)
-    ; submodules = Hashtbl.create (module String)
-    ; parent = None
-    ; prefix }
+let find_type self name =
+  match find (fun self -> self.types) self name with
+  | Some (ident, ()) -> Some ident
+  | None -> None
 
-  (** [find f self name]
+let find_val self name =
+  match find (fun self -> self.values) self name with
+  | Some (ident, ()) -> Some ident
+  | None -> None
 
-      Given some function [f] from [self] to a hash table, find the value of key
-      [name] in the hash table, and return it paired with the fully qualified
-      identifier path *)
-  let rec find f self name =
-    match Hashtbl.find (f self) name with
-    | Some data ->
-       begin match self.prefix with
-       | Some prefix -> Some (Ident.Path(prefix, name), data)
-       | None -> Some (Ident.Local name, data)
-       end
-    | None ->
-       match self.parent with
-       | Some parent -> find f parent name
-       | None -> None
+let find_mod = find (fun self -> self.submodules)
 
-  let find_constr = find (fun self -> self.constrs)
-  let find_type = find (fun self -> self.types)
-  let find_val = find (fun self -> self.values)
-  let find_mod = find (fun self -> self.submodules)
+let rec resolve_abs_path f self (prefix, name) =
+  match prefix with
+  | [] -> f self name
+  | x::xs ->
+     match find_mod self x with
+     | None -> None
+     | Some (_, submod) -> resolve_abs_path f submod (xs, name)
 
-  (** [resolve_path f strct root subpath name] searches for a signature of name
-      [root] in the scope of [strct], then calls [Sig.resolve_path f] on the
-      found signature, the subpath, and the name *)
-  let resolve_path f self root subpath name =
-    match find_mod self root with
-    | None -> None
-    | Some (prefix, submod) ->
-       match Sig.resolve_path f submod subpath name with
-       | None -> None
-       | Some x -> Some (Ident.prefix prefix (Ident.of_path (subpath, name)), x)
-
-  let to_sig self =
-    { Sig.constrs = self.constrs
-    ; Sig.types = Hashtbl.map self.types ~f:(fun x -> Type.Adt x)
-    ; Sig.values = self.values
-    ; Sig.submodules = self.submodules }
-end
+(** [resolve_path f strct root subpath] searches for a module of name [root]
+    [root] in the scope of [strct], then calls
+    [resolve_abs_path submod subpath] *)
+let resolve_path f self (prefix, name) =
+  match prefix with
+  | [] -> f self name
+  | x::xs ->
+     match find_mod self x with
+     | None -> None
+     | Some (_, submod) -> resolve_abs_path f submod (xs, name)
