@@ -4,7 +4,7 @@
 open Base
 
 type t =
-  { constrs : (string, string * int) Hashtbl.t
+  { constrs : (string, Type.adt * int) Hashtbl.t
   ; types : (string, unit) Hashtbl.t
   ; values : (string, unit) Hashtbl.t
   ; submodules : (string, t) Hashtbl.t
@@ -36,13 +36,7 @@ let rec find f self name =
      | Some parent -> find f parent name
      | None -> None
 
-let find_constr self name =
-  match Hashtbl.find self.constrs name with
-  | None -> None
-  | Some (typename, idx) ->
-     match self.prefix with
-     | None -> Some (Ident.Root typename, idx)
-     | Some prefix -> Some (Ident.Dot(prefix, typename), idx)
+let find_constr self name = Hashtbl.find self.constrs name
 
 let find_type self name =
   match find (fun self -> self.types) self name with
