@@ -36,9 +36,10 @@ module Var = struct
 end
 
 type adt =
-  { typeparams: var list
+  { name : Ident.t
+  ; typeparams: var list
   ; constr_names: (string, int) Hashtbl.t
-  ; constrs: (string * t array) array }
+  ; constrs: (string * t list) array }
 
 type decl =
   | Abstract of Kind.t
@@ -78,7 +79,7 @@ let type_of_constr ident adt constr =
     with_params
       { level_opt = None; node = Nominal ident }
       (List.map ~f:(fun x -> { level_opt = None; node = Var x}) adt.typeparams)
-  in curry (Array.to_list product) output_ty
+  in curry product output_ty
 
 let kind_of_adt adt =
   Kind.curry (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams) Kind.Mono

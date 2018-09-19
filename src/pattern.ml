@@ -1,26 +1,21 @@
 open Base
 
-type t =
+type t = {node : pattern; reg : int option}
+and pattern =
   | Con of Ident.t * int * t list (** Constructor pattern *)
   | Wild (** Wildcard pattern *)
 
-type decision_tree =
-  | Fail
-  | Leaf of int
-  | Switch of (int, decision_tree) Hashtbl.t
-  | Swap of int * decision_tree
-
-type row =
+type 'a row =
   { first_pattern : t
   ; rest_patterns : t list
-  ; action : int }
+  ; action : 'a Term.t }
 
 (** Contract: All rows in the matrix have the same length *)
-type matrix = row list
+type 'a matrix = 'a row list
 
 (** Read into a row, and returns Some row where the indexed pattern has been
     moved to the front, or None if the index reads out of bounds. *)
-let swap_column_of_row (idx : int) (row : row) =
+let swap_column_of_row (idx : int) (row : 'a row) =
   let rec f idx left = function
     | pivot::right when idx = 0 -> Some (left, pivot, right)
     | x::next -> f (idx - 1) (x::left) next
@@ -28,11 +23,8 @@ let swap_column_of_row (idx : int) (row : row) =
   in
   match f idx [] (row.first_pattern::row.rest_patterns) with
   | Some (left, pivot, right) ->
-     Some {
-         row with
-         first_pattern = pivot;
-         rest_patterns = List.rev_append left right
-       }
+     Some { row with first_pattern = pivot
+                   ; rest_patterns = List.rev_append left right }
   | None -> None
 
 (** Column-swapping operation for matrices *)
@@ -45,56 +37,77 @@ let swap_column idx =
         )
     ) ~init:(Some [])
 
+type find_typename_result =
+  | Some_constr of int option * Ident.t * int
+  | All_wilds of int option list
+
 let find_typename pats =
-    let rec f i = function
-      | [] -> None
-      | Con(typename, _, _)::_ -> Some (typename, i)
-      | Wild::xs -> f (i + 1) xs
-    in f 0 pats
+  let rec f i regs pats =
+    match pats with
+    | [] -> All_wilds (List.rev regs)
+    | {node = Con(typename, _, _); reg}::_ -> Some_constr(reg, typename, i)
+    | {node = Wild; reg}::xs -> f (i + 1) (reg::regs) xs
+  in f 0 [] pats
 
 (** Specialize operation as described in Compiling Pattern Matching to Good
     Decision Trees *)
 let specialize
       (constr : int)
       (count  : int)
-      (rows   : row list)
-    : matrix =
+      (rows   : 'a row list)
+    : 'a matrix =
   (* Anamorphism over lists, catamorphism over the natural numbers *)
   let rec ana next = function
     | 0 -> []
     | n -> next::(ana next (n - 1)) in
   let helper rows row =
-    match row.first_pattern with
+    match row.first_pattern.node with
     | Con(_, id, cpats) when id = constr ->
        { row with rest_patterns = cpats@row.rest_patterns }::rows
     | Con _ -> rows
     | Wild ->
-       { row with rest_patterns = (ana Wild count)@row.rest_patterns }::rows
+       { row with
+         rest_patterns = (ana {node = Wild; reg = None} count)@row.rest_patterns
+       }::rows
   in List.fold ~f:helper ~init:[] rows
 
 (** Construct the default matrix *)
 let default_matrix
-      (rows : row list)
-    : matrix =
+      (rows : 'a row list)
+    : 'a matrix =
   let helper rows row =
     match row.rest_patterns with
     | [] -> rows
     | second_pat::pats ->
-       match row.first_pattern with
+       match row.first_pattern.node with
        | Con _ -> rows
        | Wild ->
           ({ row with first_pattern = second_pat; rest_patterns = pats }::rows)
   in List.fold ~f:helper ~init:[] rows
 
+(** Corresponds with swap_columns and swap_column_of_row (The occurrences vector
+    is like another row) *)
+(* Maybe make function generic instead of repeating code? TODO consider later *)
+let swap_occurrences idx (occurrences : int list list) =
+  let rec f idx left = function
+    | pivot::right when idx = 0 -> Some (left, pivot, right)
+    | x::next -> f (idx - 1) (x::left) next
+    | [] -> None
+  in
+  match f idx [] occurrences with
+  | Some (left, pivot, right) ->
+     Some (pivot, List.rev_append left right)
+  | None -> None
+
 (** Compilation scheme CC *)
-let rec decision_tree_of_matrix env =
+let rec decision_tree_of_matrix occurrences env =
   let open Result.Monad_infix in
   function
-  | [] -> Ok Fail (* Case 1 *)
-  | (row::_) as rows ->
+  | [] -> Ok Term.Fail (* Case 1 *)
+  | (row::rows') as rows ->
      match find_typename (row.first_pattern::row.rest_patterns) with
-     | None -> Ok (Leaf row.action) (* Case 2 *)
-     | Some (typename, i) ->
+     | All_wilds reg_opts -> Ok (Term.Leaf(reg_opts, row.action)) (* Case 2 *)
+     | Some_constr (reg, typename, i) ->
         (* Case 3 *)
         match Symtable.find_typedef env typename with
         | None ->
@@ -104,23 +117,32 @@ let rec decision_tree_of_matrix env =
         | Some (Type.Adt alg) ->
            let jump_tbl = Hashtbl.create (module Int) in
            let default = default_matrix rows in
-           let result =
-             Array.foldi ~f:(fun id acc (_, products) ->
-                 acc >>= fun () ->
-                   let matrix =
-                     match specialize id (Array.length products) rows with
-                     | [] -> default
-                     | matrix -> matrix
-                   in
-                   match decision_tree_of_matrix env matrix with
-                   | Ok tree ->
-                      Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
-                      Ok ()
-                   | Error e -> Error e
-               ) alg.Type.constrs ~init:(Ok ())
-           in
-           result >>| fun () ->
-             if i = 0 then
-               Switch jump_tbl
-             else
-               Swap (i, Switch jump_tbl)
+           match swap_occurrences i occurrences with
+           | None -> Error Sequence.empty
+           | Some (first_occ, rest_occs) ->
+              let (_, product) = alg.constrs.(i) in
+              let rec f idx = function
+                | [] -> []
+                | _::xs -> (idx::first_occ)::(f (idx + 1) xs)
+              in
+              let pushed_occs = f 0 product in
+              let match_occs = List.append pushed_occs rest_occs in
+              match swap_column i rows' with
+              | None -> Error Sequence.empty
+              | Some rows ->
+                 Array.foldi ~f:(fun id acc (_, products) ->
+                     acc >>= fun () ->
+                     match specialize id (List.length products) rows with
+                     | [] -> Ok ()
+                     | matrix ->
+                        match decision_tree_of_matrix match_occs env matrix with
+                        | Ok tree ->
+                           Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
+                           Ok ()
+                        | Error e -> Error e
+                   ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
+                 decision_tree_of_matrix rest_occs env default
+                 >>| fun default_tree ->
+                 let switch =
+                   Term.Switch(first_occ, reg, alg, jump_tbl, default_tree)
+                 in if i = 0 then switch else Term.Swap(i, switch)

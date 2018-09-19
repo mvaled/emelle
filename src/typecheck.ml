@@ -148,7 +148,48 @@ let inst checker target_level =
     | _ -> ty
   in helper
 
-let rec infer checker =
+let rec infer_decision_tree checker tys =
+  let open Result.Monad_infix in
+  function
+  | Term.Fail -> Ok (fresh_tvar checker)
+  | Term.Leaf(reg_opts, action) ->
+     let rec f tys reg_opts =
+       match tys, reg_opts with
+       | [], [] -> Ok ()
+       | [], _ | _, [] -> Error Sequence.empty
+       | _::tys, None::reg_opts -> f tys reg_opts
+       | ty::tys, (Some reg)::reg_opts ->
+          match Hashtbl.add checker.env ~key:reg ~data:ty with
+          | `Duplicate -> Error (Sequence.return Message.Unreachable)
+          | `Ok -> f tys reg_opts
+     in
+     f tys reg_opts
+     >>= fun () -> infer checker action
+  | Term.Switch(_, reg_opt, adt, jump_tbl, default_tree) ->
+     begin match tys with
+     | [] -> Error Sequence.empty
+     | ty::tys ->
+        begin match reg_opt with
+        | Some reg ->
+           let _ = Hashtbl.add checker.env ~key:reg ~data:ty in
+           ()
+        | None -> ()
+        end;
+        unify_types checker ty (Type.of_node (Type.Nominal adt.name))
+        >>= fun () ->
+        Hashtbl.fold ~f:(fun ~key ~data acc ->
+            acc >>= fun () ->
+            let (_, product) = adt.constrs.(key) in
+            infer_decision_tree checker (List.append product tys) data
+            >>| fun _ ->
+            ()
+          ) ~init:(Ok ()) jump_tbl >>= fun () ->
+        infer_decision_tree checker tys default_tree >>| fun _ -> ty
+     end
+  | Term.Swap _ ->
+     Ok (failwith "TODO")
+
+and infer checker =
   let open Result.Monad_infix in
   function
   | Term.Ann{term; _} -> infer checker term
@@ -158,21 +199,20 @@ let rec infer checker =
      | (Ok f_ty, Ok x_ty) ->
         let var = fresh_tvar checker in
         let result = unify_types checker f_ty (Type.arrow x_ty var) in
-        result >>| fun () -> x_ty
+        result >>| fun () -> var
      | (Error f_err, Error x_err) -> Error (Sequence.append f_err x_err)
      | (err, Ok _) | (Ok _, err) -> err
      end
 
-  | Term.Case(_, _, cases) ->
-     let var = fresh_tvar checker in
-     let types =
-       Array.fold
-         ~f:(fun acc next ->
-           acc >>= fun acc ->
-           (infer checker next) >>= fun ty ->
-           Ok (ty::acc)
-         ) ~init:(Ok []) cases
-     in types >>= fun types -> unify_many checker var types >>| fun () -> var
+  | Term.Case(discriminants, tree) ->
+     List.fold_right ~f:(fun next acc ->
+         acc >>= fun list ->
+         infer checker next >>| fun ty ->
+         ty::list
+       ) ~init:(Ok []) discriminants >>= fun tys ->
+     let out_ty = fresh_tvar checker in
+     infer_decision_tree checker tys tree >>= fun ty ->
+     unify_types checker out_ty ty >>| fun () -> out_ty
 
   | Term.Extern_var id ->
      begin match Symtable.find_val checker.symtable id with
@@ -212,17 +252,6 @@ let rec infer checker =
            in List.fold ~f:f ~init:(Ok ()) bindings
          ) checker
      in result >>= fun () -> infer checker body
-
-  | Term.Select(typename, constr, idx, data) ->
-     begin match Hashtbl.find checker.types typename with
-     | Some adt ->
-        infer checker data >>= fun ty0 ->
-        let ty1 = Type.type_of_constr typename adt constr in
-        let result = unify_types checker ty0 (inst checker 0 ty1) in
-        let _, tys = adt.Type.constrs.(constr) in
-        result >>| fun () -> tys.(idx)
-     | None -> Error (Sequence.return (Message.Unresolved_type typename))
-     end
 
   | Term.Var reg ->
      match Hashtbl.find checker.env reg with

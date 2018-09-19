@@ -46,8 +46,8 @@ let test_phase f curr_phase input format phase =
   let result = f format in
   match result, (compare_phase phase curr_phase) = 0 with
   | Error _, true -> None
-  | Error _, false -> raise (Fail(input, phase))
-  | Ok _, true -> raise (Fail(input, phase))
+  | Error _, false -> raise (Fail(input, curr_phase))
+  | Ok _, true -> raise (Fail(input, curr_phase))
   | Ok next, false -> Some next
 
 let test (input, phase) =
