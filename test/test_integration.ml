@@ -40,6 +40,10 @@ let tests =
   ; "fun x y -> x", End
   ; "fun f x -> f x", End
   ; "fun f x y -> f y x", End
+  ; "let id = fun x -> x in id id", End
+  ; "let rec id = fun x -> x and id2 = id in id id2 (id2 id)", End
+  ; "case fun x -> x with id -> id id", End
+  ; "let id = fun x -> x in case id with x -> x x", End
   ]
 
 let test_phase f curr_phase input format phase =

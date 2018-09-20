@@ -148,36 +148,45 @@ let inst checker target_level =
     | _ -> ty
   in helper
 
-let rec infer_pattern checker pat =
+(** [infer_pattern checker polyty pat] associates [polyty] with [pat]'s register
+    if it has any *)
+let rec infer_pattern checker polyty pat =
   let open Result.Monad_infix in
   match pat.Term.node with
   | Term.Con(adt, idx, pats) ->
-     let ty = Type.of_node (Type.Nominal adt.Type.name) in
+     let nom_ty = Type.of_node (Type.Nominal adt.Type.name) in
+     unify_types checker
+       (* The target level is the current checker level, as this function needs
+          to receive [polyty] from itself recursively. *)
+       (inst checker checker.level polyty)
+       (* -1 indicates that the only typevars are those specified in the ADT
+          definition, which should have a level of -1. No typevars of higher
+          levels should appear. *)
+       (inst checker (-1) nom_ty)
+     >>= fun () ->
      begin match pat.reg with
+     | None -> Ok ()
      | Some reg ->
-        let _ = Hashtbl.add checker.env ~key:reg ~data:ty in
-        ()
-     | None -> ()
-     end;
+        match Hashtbl.add checker.env ~key:reg ~data:polyty with
+        | `Ok -> Ok ()
+        | `Duplicate -> Error (Sequence.return Message.Unreachable)
+     end >>= fun () ->
      let (_, products) = adt.Type.constrs.(idx) in
      let rec f pats tys =
        match pats, tys with
        | [], [] -> Ok ()
        | [], _ | _, [] -> Error Sequence.empty
        | pat::pats, ty::tys ->
-          infer_pattern checker pat >>= fun ty' ->
-          unify_types checker ty ty' >>= fun () ->
+          infer_pattern checker (inst checker (-1) ty) pat >>= fun () ->
           f pats tys
-     in f pats products >>| fun () -> ty
+     in f pats products
   | Term.Wild ->
-     let tvar = fresh_tvar checker in
-     begin match pat.reg with
+     match pat.reg with
+     | None -> Ok ()
      | Some reg ->
-        let _ = Hashtbl.add checker.env ~key:reg ~data:tvar in
-        ()
-     | None -> ()
-     end;
-     Ok tvar
+        match Hashtbl.add checker.env ~key:reg ~data:polyty with
+        | `Ok -> Ok ()
+        | `Duplicate -> Error (Sequence.return Message.Unreachable)
 
 let rec infer checker =
   let open Result.Monad_infix in
@@ -198,7 +207,9 @@ let rec infer checker =
      let out_ty = fresh_tvar checker in
      List.fold_right ~f:(fun discriminant acc ->
          acc >>= fun list ->
-         infer checker discriminant >>| fun ty ->
+         in_new_level (fun checker ->
+             infer checker discriminant
+           ) checker >>| fun ty ->
          ty::list
        ) ~init:(Ok []) discriminants >>= fun discr_tys ->
      let rec f discr_tys pats =
@@ -206,13 +217,14 @@ let rec infer checker =
        | [], [] -> Ok ()
        | [], _ | _, [] -> Error Sequence.empty
        | ty::tys, pat::pats ->
-          infer_pattern checker pat >>= fun ty' ->
-          unify_types checker ty ty' >>= fun () ->
+          infer_pattern checker ty pat >>= fun () ->
           f tys pats
      in
      List.fold ~f:(fun acc (pats, consequent) ->
          acc >>= fun () ->
-         f discr_tys pats >>= fun () ->
+         in_new_level (fun _ ->
+             f discr_tys pats
+           ) checker >>= fun () ->
          infer checker consequent >>= fun ty ->
          unify_types checker ty out_ty
        ) ~init:(Ok ()) cases >>| fun () -> out_ty
