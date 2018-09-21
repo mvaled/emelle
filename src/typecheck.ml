@@ -148,21 +148,27 @@ let inst checker target_level =
     | _ -> ty
   in helper
 
+let inst_adt checker adt =
+  let rec helper acc = function
+    | [] -> acc
+    | qvar::qvars ->
+       let targ =
+         Type.of_node
+           (Type.Var
+              (Type.fresh_var checker.tvargen checker.level qvar.Type.kind))
+       in helper (Type.of_node (Type.App(acc, targ))) qvars
+  in helper (Type.of_node (Type.Nominal adt.Type.name)) adt.Type.typeparams
+
 (** [infer_pattern checker polyty pat] associates [polyty] with [pat]'s register
     if it has any *)
 let rec infer_pattern checker polyty pat =
   let open Result.Monad_infix in
   match pat.Term.node with
   | Term.Con(adt, idx, pats) ->
-     let nom_ty = Type.of_node (Type.Nominal adt.Type.name) in
-     unify_types checker
-       (* The target level is the current checker level, as this function needs
-          to receive [polyty] from itself recursively. *)
-       (inst checker checker.level polyty)
-       (* -1 indicates that the only typevars are those specified in the ADT
-          definition, which should have a level of -1. No typevars of higher
-          levels should appear. *)
-       (inst checker (-1) nom_ty)
+     let nom_ty = inst_adt checker adt in
+     (* The target level is the current checker level, as this function needs
+        to receive [polyty] from itself recursively. *)
+     unify_types checker (inst checker checker.level polyty) nom_ty
      >>= fun () ->
      begin match pat.reg with
      | None -> Ok ()
