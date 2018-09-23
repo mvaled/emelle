@@ -7,7 +7,8 @@ type monotype =
   | TArrow
   | TFloat
   | TInt
-  | TVar of path
+  | TNominal of path
+  | TVar of string
 
 type polytype = Forall of string list * monotype
 

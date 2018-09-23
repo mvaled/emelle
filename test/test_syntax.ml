@@ -49,11 +49,11 @@ let valid_monotypes =
   ; "a b c"
   ; "(a -> b) -> f a -> f b"
   ; "m a -> (a -> m b) -> m b"
-  ; "option a"
-  ; "either a b"
-  ; "either foo bar"
-  ; "io unit"
-  ; "unit"
+  ; "Option a"
+  ; "Either a b"
+  ; "Either foo bar"
+  ; "IO unit"
+  ; "Unit"
   ; "a' b' c'"
   ]
 
@@ -69,23 +69,24 @@ let invalid_monotypes =
   ]
 
 let valid_adts =
-  [ "void ="
-  ; "void = |"
-  ; "unit = Unit"
-  ; "unit = | Unit"
-  ; "option a = Some a | None"
-  ; "list a = | Cons a * list a | Nil"
-  ; "bool = False | True"
-  ; "either e a = Left e | Right a"
-  ; "stateT s m a = StateT s -> m (product a s)"
+  [ "Void ="
+  ; "Void = |"
+  ; "Unit = Unit"
+  ; "Unit = | Unit"
+  ; "Option a = Some a | None"
+  ; "List a = | Cons a * List a | Nil"
+  ; "Bool = False | True"
+  ; "Either e a = Left e | Right a"
+  ; "StateT s m a = StateT s -> m (Product a s)"
   ]
 
 let invalid_adts =
   [ ""
   ; "= "
   ; "= Unit"
-  ; "x = Y |"
-  ; "tupleSyntaxNotSupported a b = Foo (a, b)"
+  ; "X = Y |"
+  ; "x = Y"
+  ; "TupleSyntaxNotSupported a b = Foo (a, b)"
   ]
 
 let () =

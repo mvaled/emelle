@@ -39,4 +39,4 @@ pages:
 
 cache:
   paths:
-  - .opam
+  - /root/.opam
