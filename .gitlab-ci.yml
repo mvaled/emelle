@@ -4,13 +4,13 @@ before_script:
 - apt-get install -qq unzip
 - echo "" | sh <(curl -sL https://raw.githubusercontent.com/ocaml/opam/master/shell/install.sh)
 - opam init -c 4.07.0 --root=.opam
-- opam install -y -q --root=.opam dune
-- opam install -y -q --root=.opam base
-- opam install -y -q --root=.opam stdio
-- opam install -y -q --root=.opam ppx_jane
-- opam install -y -q --root=.opam menhir
-- opam install -y -q --root=.opam odoc
-- eval $(opam env --root=.opam)
+- eval $(opam env --root=.opam --set-root)
+- opam install -y -q dune
+- opam install -y -q base
+- opam install -y -q stdio
+- opam install -y -q ppx_jane
+- opam install -y -q menhir
+- opam install -y -q odoc
 
 build:
   stage: build
