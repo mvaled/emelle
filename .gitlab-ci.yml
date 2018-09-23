@@ -10,17 +10,32 @@ before_script:
 - opam install -y -q stdio
 - opam install -y -q ppx_jane
 - opam install -y -q menhir
+- opam install -y -q odoc
 - eval $(opam env)
 
-build_job:
+build:
   stage: build
   script:
   - dune build app/main.exe
+  artifacts:
+    paths:
+    - _build
 
-test_job:
+test:
   stage: test
   script:
   - dune runtest
+
+pages:
+  stage: deploy
+  script:
+  - dune build @doc
+  - mv _build/main/_doc/_html public
+  artifacts:
+    paths:
+    - public
+  only:
+  - master
 
 cache:
   paths:

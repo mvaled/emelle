@@ -1,0 +1,22 @@
+opam-version: "2.0"
+name: "emelle"
+version: "prelease, OPAM file created to work with Dune public_name"
+synopsis: "An ML dialect"
+description: """
+An ML dialect
+"""
+maintainer: "TAH TheAspiringHacker@protonmail.com"
+authors: "TAH TheAspiringHacker@protonmail.com"
+license: "MPL 2.0"
+homepage: "https://gitlab.com/emelle/emelle"
+bug-reports: "https://gitlab.com/emelle/emelle/issues"
+dev-repo: "https://gitlab.com/emelle/emelle"
+depends: [
+  "dune" {build & >= "1.2.1"}
+  "base" {">=v0.11" & "<v0.12"}
+  "ppx_jane" {">=v0.11" & "<v0.12"}
+  "menhir"
+]
+build: [
+  ["dune" "build" "-p" name]
+]
