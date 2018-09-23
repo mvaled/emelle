@@ -24,4 +24,4 @@ test_job:
 
 cache:
   paths:
-  - .opam
+  - /root/.opam
