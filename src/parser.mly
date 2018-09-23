@@ -51,7 +51,7 @@ upath: UIDENT list(DOT UIDENT { $2 }) {
 path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
 
 adt:
-  | LIDENT list(LIDENT) EQUALS option(BAR) separated_list(BAR, constr) {
+  | UIDENT list(LIDENT) EQUALS option(BAR) separated_list(BAR, constr) {
       Ast.{ name = $1; typeparams = $2; constrs = $5 }
     }
   ;
@@ -71,7 +71,8 @@ monotype_app:
   ;
 
 monotype_atom:
-  | path { Ast.TVar $1 }
+  | upath { Ast.TNominal $1 }
+  | LIDENT { Ast.TVar $1 }
   | LPARENS ARROW RPARENS { Ast.TArrow }
   | LPARENS monotype RPARENS { $2 }
   ;
@@ -124,15 +125,12 @@ expr_atom:
 
 pattern:
   | upath nonempty_list(pattern) {
-        (($symbolstartpos, $endpos)
-        , Ast.Con($1, $2))
+        (($symbolstartpos, $endpos), Ast.Con($1, $2))
       }
   | pattern_2 { $1 }
 
 pattern_2:
-  | upath {
-        (($symbolstartpos, $endpos), Ast.Con($1, []))
-      }
+  | upath { (($symbolstartpos, $endpos), Ast.Con($1, [])) }
   | LIDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
   | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }
   | LPARENS pattern RPARENS { $2 }
