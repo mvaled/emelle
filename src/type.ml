@@ -23,6 +23,7 @@ and var =
   ; kind : Kind.t }
 [@@deriving sexp]
 
+(** Type [vargen] is the generator of fresh type variables. *)
 type vargen = int ref
 
 module Var = struct
@@ -47,6 +48,7 @@ type decl =
 
 let equal_prim x y = (compare_prim x y) = 0
 
+(** [create_vargen ()] creates a fresh vargen state. *)
 let create_vargen () = { contents = 0 }
 
 let fresh_var vargen level kind =
@@ -84,8 +86,8 @@ let type_of_constr ident adt constr =
 let kind_of_adt adt =
   Kind.curry (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams) Kind.Mono
 
-(** Perform the occurs check, returning true if the typevar occurs in the type.
-    Adjusts the levels of unassigned typevars when necessary. *)
+(** [occurs tvar ty] performs the occurs check, returning true if [tyvar] occurs
+    in [ty]. It adjusts the levels of unassigned typevars when necessary. *)
 let rec occurs tvar ty =
   match ty.level_opt with
   | Some x when x < tvar.level -> false

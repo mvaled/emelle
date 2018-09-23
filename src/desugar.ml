@@ -5,6 +5,7 @@ type 'cmp t =
   ; structure : Module.t
   ; symtable : Symtable.t }
 
+(** Create a fresh desugarer state *)
 let create structure symtable =
   { vargen = 0
   ; structure
@@ -14,11 +15,9 @@ let fresh_register st =
   st.vargen <- st.vargen + 1;
   st.vargen - 1
 
-(** [pattern_of_ast_pattern state map reg ast_pat]
-
-    Convert [ast_pat] from the AST representation to the representation defined
-    in term.ml, collecting bound identifiers in [map] and returning errors
-    when constructors or types aren't defined. *)
+(** [pattern_of_ast_pattern state map reg ast_pat] converts [ast_pat] from an
+    [Ast.pattern] to [Term.ml] while collecting bound identifiers in [map],
+    returning `Error` if a data constructor or type isn't defined. *)
 let rec term_pattern_of_ast_pattern st map reg (_, node) =
   let open Result.Monad_infix in
   match node with
@@ -44,6 +43,8 @@ let rec term_pattern_of_ast_pattern st map reg (_, node) =
      end
   | Ast.Wild -> Ok (Term.{node = Term.Wild; reg = Some reg}, map)
 
+(** [term_of_expr desugarer env expr] converts [expr] from an [Ast.expr] to a
+    [Term.t]. *)
 let rec term_of_expr st env (ann, node) =
   let open Result.Monad_infix in
   let term =

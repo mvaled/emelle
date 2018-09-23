@@ -8,6 +8,7 @@ type t =
   ; tvargen : Type.vargen
   ; kvargen : Kind.vargen }
 
+(** [create symtable] creates a fresh typechecker state. *)
 let create symtable =
   { types = Hashtbl.create (module Ident)
   ; symtable
@@ -21,6 +22,7 @@ let fresh_tvar (checker : t) =
        ; node =
            Type.Var (Type.fresh_var checker.tvargen checker.level Kind.Mono) }
 
+(** [unify_kinds kind1 kind2] unifies the two kinds. *)
 let rec unify_kinds l r =
   let open Result.Monad_infix in
   match l, r with
@@ -41,6 +43,8 @@ let rec unify_kinds l r =
   | Kind.Mono, Kind.Poly _ | Kind.Poly _, Kind.Mono ->
      Error (Sequence.return (Message.Kind_unification_fail(l, r)))
 
+(** [kind_of_type typechecker ty] infers the kind of [ty], returning a result
+    with any errors. *)
 let rec kind_of_type checker ty =
   let open Result.Monad_infix in
   match ty.Type.node with
@@ -62,7 +66,8 @@ let rec kind_of_type checker ty =
   | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
   | Type.Var { ty = None; kind; _ } -> Ok kind
 
-(** Unify two types, returning the unification errors *)
+(** [unify_types typechecker type0 type1] unifies [type1] and [type2], returning
+    a result with any unification errors. *)
 let rec unify_types checker lhs rhs =
   let open Result.Monad_infix in
   if phys_equal lhs rhs then
@@ -148,6 +153,9 @@ let inst checker target_level =
     | _ -> ty
   in helper
 
+(** [inst_adt typechecker adt] returns a type of kind * representing the type
+    constructor of [adt] being applied to fresh type variables of the correct
+    kinds. *)
 let inst_adt checker adt =
   let rec helper acc = function
     | [] -> acc
@@ -160,7 +168,7 @@ let inst_adt checker adt =
   in helper (Type.of_node (Type.Nominal adt.Type.name)) adt.Type.typeparams
 
 (** [infer_pattern checker polyty pat] associates [polyty] with [pat]'s register
-    if it has any *)
+    if it has any while unifying any type constraints that arise from [pat]. *)
 let rec infer_pattern checker polyty pat =
   let open Result.Monad_infix in
   match pat.Term.node with
@@ -194,6 +202,7 @@ let rec infer_pattern checker polyty pat =
         | `Ok -> Ok ()
         | `Duplicate -> Error (Sequence.return Message.Unreachable)
 
+(** [infer typechecker term] infers the type of [term], returning a result. *)
 let rec infer checker =
   let open Result.Monad_infix in
   function
