@@ -15,6 +15,69 @@ let fresh_register st =
   st.vargen <- st.vargen + 1;
   st.vargen - 1
 
+(** Convert an Ast.monotype into an Type.t *)
+let rec normalize st tvars (_, node) =
+  let open Result.Monad_infix in
+  match node with
+  | Ast.TApp(constr, arg) ->
+     normalize st tvars constr >>= fun constr ->
+     normalize st tvars arg >>| fun arg ->
+     Type.of_node (Type.App(constr, arg))
+  | Ast.TArrow -> Ok (Type.of_node (Type.Prim Type.Arrow))
+  | Ast.TFloat -> Ok (Type.of_node (Type.Prim Type.Float))
+  | Ast.TInt -> Ok (Type.of_node (Type.Prim Type.Int))
+  | Ast.TNominal path ->
+     begin match Module.resolve_path Module.find_type st.structure path with
+     | Some ident -> Ok (Type.of_node (Type.Nominal ident))
+     | None -> Error Sequence.empty
+     end
+  | Ast.TVar name ->
+     match Hashtbl.find tvars name with
+     | Some tvar -> Ok tvar
+     | None -> Error Sequence.empty
+
+(** Convert an Ast.adt into a Type.adt *)
+let type_adt_of_ast_adt st kvargen adt =
+  let open Result.Monad_infix in
+  let tvargen = Type.create_vargen () in
+  let tvar_map = Hashtbl.create (module String) in
+  let constr_map = Hashtbl.create (module String) in
+  List.fold_right ~f:(fun str acc ->
+      acc >>= fun list ->
+      let tvar =
+        Type.fresh_var tvargen (-1) (Kind.Var (Kind.fresh_var kvargen))
+      in
+      match
+        Hashtbl.add tvar_map ~key:str ~data:(Type.of_node (Type.Var tvar))
+      with
+      | `Duplicate -> Error Sequence.empty
+      | `Ok -> Ok (tvar::list)
+    ) ~init:(Ok []) adt.Ast.typeparams
+  >>= fun tvar_list ->
+  List.fold_right ~f:(fun (name, product) acc ->
+      acc >>= fun (list, idx) ->
+      match Hashtbl.add constr_map ~key:name ~data:idx with
+      | `Duplicate -> Error Sequence.empty
+      | `Ok ->
+         List.fold_right ~f:(fun ty acc ->
+             acc >>= fun list ->
+             normalize st tvar_map ty >>| fun ty ->
+             ty::list
+           ) ~init:(Ok []) product
+         >>| fun product ->
+         ((name, product)::list, idx + 1)
+    ) ~init:(Ok ([], 0)) adt.Ast.constrs
+  >>| fun (constrs, _) ->
+  let constrs = Array.of_list constrs in
+  Type.{ name =
+           begin match st.structure.Module.prefix with
+           | Some prefix -> Ident.Dot(prefix, adt.Ast.name)
+           | None -> Ident.Root(adt.Ast.name)
+           end
+       ; typeparams = tvar_list
+       ; constr_names = constr_map
+       ; constrs }
+
 (** [pattern_of_ast_pattern state map reg ast_pat] converts [ast_pat] from an
     [Ast.pattern] to [Term.ml] while collecting bound identifiers in [map],
     returning `Error` if a data constructor or type isn't defined. *)
