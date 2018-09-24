@@ -2,15 +2,16 @@ open Base
 
 type path = string list * string
 
-type monotype =
-  | TApp of monotype * monotype
+type 'a monotype = 'a * 'a monotype'
+and 'a monotype' =
+  | TApp of 'a monotype * 'a monotype
   | TArrow
   | TFloat
   | TInt
   | TNominal of path
   | TVar of string
 
-type polytype = Forall of string list * monotype
+type 'a polytype = Forall of string list * 'a monotype
 
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =
@@ -28,11 +29,11 @@ and 'a expr' =
   | Var of path
 and 'a lambda_case = 'a pattern * 'a pattern list * 'a expr
 
-type adt =
+type 'a adt =
   { name : string
   ; typeparams : string list
-  ; constrs : (string * monotype list) list }
+  ; constrs : (string * 'a monotype list) list }
 
 type 'a file =
-  { adts : adt list list
+  { adts : 'a adt list list
   ; expr : 'a expr }

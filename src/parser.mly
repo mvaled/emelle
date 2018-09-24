@@ -32,8 +32,8 @@
 
 %start <(Lexing.position * Lexing.position) Ast.expr> file
 %start <(Lexing.position * Lexing.position) Ast.expr> expr_eof
-%start <Ast.monotype> monotype_eof
-%start <Ast.adt> adt_eof
+%start <(Lexing.position * Lexing.position) Ast.monotype> monotype_eof
+%start <(Lexing.position * Lexing.position) Ast.adt> adt_eof
 
 %%
 
@@ -61,19 +61,22 @@ constr: UIDENT separated_list(STAR, monotype) { ($1, $2) };
 polytype: FORALL list(LIDENT) DOT monotype { Ast.Forall($2, $4) };
 
 monotype:
-  | monotype_app ARROW monotype { Ast.TApp(Ast.TApp(Ast.TArrow, $1), $3) }
+  | monotype_app ARROW monotype {
+      let loc = ($symbolstartpos, $endpos) in
+      loc, Ast.TApp((loc, Ast.TApp((loc, Ast.TArrow), $1)), $3)
+    }
   | monotype_app { $1 }
   ;
 
 monotype_app:
-  | monotype_app monotype_atom { Ast.TApp($1, $2) }
+  | monotype_app monotype_atom { ($symbolstartpos, $endpos), Ast.TApp($1, $2) }
   | monotype_atom { $1 }
   ;
 
 monotype_atom:
-  | upath { Ast.TNominal $1 }
-  | LIDENT { Ast.TVar $1 }
-  | LPARENS ARROW RPARENS { Ast.TArrow }
+  | upath { ($symbolstartpos, $endpos), (Ast.TNominal $1) }
+  | LIDENT { ($symbolstartpos, $endpos), (Ast.TVar $1) }
+  | LPARENS ARROW RPARENS { ($symbolstartpos, $endpos), Ast.TArrow }
   | LPARENS monotype RPARENS { $2 }
   ;
 
