@@ -29,12 +29,12 @@ let rec normalize st tvars (_, node) =
   | Ast.TNominal path ->
      begin match Module.resolve_path Module.find_type st.structure path with
      | Some ident -> Ok (Type.of_node (Type.Nominal ident))
-     | None -> Error Sequence.empty
+     | None -> Error (Sequence.return (Message.Unresolved_path path))
      end
   | Ast.TVar name ->
      match Hashtbl.find tvars name with
      | Some tvar -> Ok tvar
-     | None -> Error Sequence.empty
+     | None -> Error (Sequence.return (Message.Unresolved_typevar name))
 
 (** Convert an Ast.adt into a Type.adt *)
 let type_adt_of_ast_adt st kvargen adt =
@@ -50,14 +50,14 @@ let type_adt_of_ast_adt st kvargen adt =
       match
         Hashtbl.add tvar_map ~key:str ~data:(Type.of_node (Type.Var tvar))
       with
-      | `Duplicate -> Error Sequence.empty
+      | `Duplicate -> Error (Sequence.return (Message.Redefined_typevar str))
       | `Ok -> Ok (tvar::list)
     ) ~init:(Ok []) adt.Ast.typeparams
   >>= fun tvar_list ->
   List.fold_right ~f:(fun (name, product) acc ->
       acc >>= fun (list, idx) ->
       match Hashtbl.add constr_map ~key:name ~data:idx with
-      | `Duplicate -> Error Sequence.empty
+      | `Duplicate -> Error (Sequence.return (Message.Redefined_constr name))
       | `Ok ->
          List.fold_right ~f:(fun ty acc ->
              acc >>= fun list ->
