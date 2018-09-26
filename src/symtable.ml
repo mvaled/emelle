@@ -10,7 +10,7 @@ open Base
 type t =
   { typedefs : (Ident.t, Type.decl) Hashtbl.t
   ; constrs : (Ident.t, Type.adt * int) Hashtbl.t
-  ; vals : (Ident.t, Type.t * unit) Hashtbl.t }
+  ; vals : (Ident.t, Type.t * Lambda.t) Hashtbl.t }
 
 let create () =
   { typedefs = Hashtbl.create (module Ident)
