@@ -68,9 +68,9 @@ let rec term_of_expr st env (ann, node) =
            Env.in_scope_with (fun env ->
                term_of_expr st env expr
              ) map env >>| fun body ->
-           ([pat], body)::cases
+           (pat, [], body)::cases
          ) ~init:(Ok []) cases >>| fun cases ->
-       Term.Case([discriminant], cases)
+       Term.Case(discriminant, [], cases)
 
     | Ast.Lam((_, patterns, _) as case, cases) ->
        let reg = fresh_register st in
@@ -88,7 +88,7 @@ let rec term_of_expr st env (ann, node) =
          Env.in_scope_with (fun env ->
              term_of_expr st env expr
            ) map env >>| fun term ->
-         (pat::pats, term)
+         (pat, pats, term)
        in
        List.fold_right ~f:(fun branch acc ->
            acc >>= fun rows ->
@@ -96,7 +96,7 @@ let rec term_of_expr st env (ann, node) =
            row::rows
          ) ~init:(Ok []) (case::cases) >>| fun cases ->
        let case_term =
-         Term.Case(List.map ~f:(fun reg -> Term.Var reg) (reg::regs), cases)
+         Term.Case(Term.Var reg, List.map ~f:(fun x -> Term.Var x) regs, cases)
        in
        List.fold_right ~f:(fun reg body ->
            Term.Lam(reg, body)
@@ -110,7 +110,7 @@ let rec term_of_expr st env (ann, node) =
             let reg = fresh_register st in
             term_pattern_of_ast_pattern st map reg pat >>= fun (pat, map) ->
             f map bindings >>| fun cont ->
-            Term.Case([def], [([pat], cont)])
+            Term.Case(def, [], [(pat, [], cont)])
        in f (Map.empty (module String)) bindings
 
     | Ast.Let_rec(bindings, body) ->

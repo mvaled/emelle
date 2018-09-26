@@ -218,7 +218,7 @@ let rec infer checker =
      | (err, Ok _) | (Ok _, err) -> err
      end
 
-  | Term.Case(discriminants, cases) ->
+  | Term.Case(discriminant, discriminants, cases) ->
      let out_ty = fresh_tvar checker in
      List.fold_right ~f:(fun discriminant acc ->
          acc >>= fun list ->
@@ -226,7 +226,7 @@ let rec infer checker =
              infer checker discriminant
            ) checker >>| fun ty ->
          ty::list
-       ) ~init:(Ok []) discriminants >>= fun discr_tys ->
+       ) ~init:(Ok []) (discriminant::discriminants) >>= fun discr_tys ->
      let rec f discr_tys pats =
        match discr_tys, pats with
        | [], [] -> Ok ()
@@ -235,10 +235,10 @@ let rec infer checker =
           infer_pattern checker ty pat >>= fun () ->
           f tys pats
      in
-     List.fold ~f:(fun acc (pats, consequent) ->
+     List.fold ~f:(fun acc (pat, pats, consequent) ->
          acc >>= fun () ->
          in_new_level (fun _ ->
-             f discr_tys pats
+             f discr_tys (pat::pats)
            ) checker >>= fun () ->
          infer checker consequent >>= fun ty ->
          unify_types checker ty out_ty

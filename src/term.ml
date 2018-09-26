@@ -8,7 +8,7 @@ and pattern' =
 type 'a t =
   | Ann of {ann : 'a; term: 'a t}
   | App of 'a t * 'a t
-  | Case of 'a t list * (pattern list * 'a t) list
+  | Case of 'a t * 'a t list * (pattern * pattern list * 'a t) list
   | Extern_var of Ident.t
   | Lam of int * 'a t
   | Let of int * 'a t * 'a t
