@@ -1,8 +1,7 @@
 open Base
 
 type t =
-  { types : (Ident.t, Type.adt) Hashtbl.t
-  ; symtable : Symtable.t
+  { symtable : Symtable.t
   ; env : (int, Type.t) Hashtbl.t
   ; mutable level : int
   ; tvargen : Type.vargen
@@ -11,8 +10,7 @@ type t =
 
 (** [create symtable] creates a fresh typechecker state. *)
 let create symtable structure =
-  { types = Hashtbl.create (module Ident)
-  ; symtable
+  { symtable
   ; env = Hashtbl.create (module Int)
   ; level = 0
   ; tvargen = Type.create_vargen ()
