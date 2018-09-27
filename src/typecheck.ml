@@ -6,16 +6,18 @@ type t =
   ; env : (int, Type.t) Hashtbl.t
   ; mutable level : int
   ; tvargen : Type.vargen
-  ; kvargen : Kind.vargen }
+  ; kvargen : Kind.vargen
+  ; structure : Module.t }
 
 (** [create symtable] creates a fresh typechecker state. *)
-let create symtable =
+let create symtable structure =
   { types = Hashtbl.create (module Ident)
   ; symtable
   ; env = Hashtbl.create (module Int)
   ; level = 0
   ; tvargen = Type.create_vargen ()
-  ; kvargen = Kind.create_vargen () }
+  ; kvargen = Kind.create_vargen ()
+  ; structure }
 
 let fresh_tvar (checker : t) =
   Type.{ level_opt = Some checker.level
@@ -115,6 +117,73 @@ let unify_many checker ty =
       | Error e1, Error e2 -> Error (Sequence.append e1 e2)
     )
     ~init:(Ok ())
+
+(** Convert an Ast.monotype into an Type.t *)
+let rec normalize checker tvars (_, node) =
+  let open Result.Monad_infix in
+  match node with
+  | Ast.TApp(constr, arg) ->
+     normalize checker tvars constr >>= fun constr ->
+     normalize checker tvars arg >>| fun arg ->
+     Type.of_node (Type.App(constr, arg))
+  | Ast.TArrow -> Ok (Type.of_node (Type.Prim Type.Arrow))
+  | Ast.TFloat -> Ok (Type.of_node (Type.Prim Type.Float))
+  | Ast.TInt -> Ok (Type.of_node (Type.Prim Type.Int))
+  | Ast.TNominal path ->
+     begin match
+       Module.resolve_path Module.find_type checker.structure path
+     with
+     | Some ident -> Ok (Type.of_node (Type.Nominal ident))
+     | None -> Error (Sequence.return (Message.Unresolved_path path))
+     end
+  | Ast.TVar name ->
+     match Hashtbl.find tvars name with
+     | Some tvar -> Ok tvar
+     | None -> Error (Sequence.return (Message.Unresolved_typevar name))
+
+(** Convert an Ast.adt into a Type.adt *)
+let type_adt_of_ast_adt checker adt =
+  let open Result.Monad_infix in
+  let tvar_map = Hashtbl.create (module String) in
+  let constr_map = Hashtbl.create (module String) in
+  List.fold_right ~f:(fun str acc ->
+      acc >>= fun list ->
+      let tvar =
+        Type.fresh_var checker.tvargen (-1)
+          (Kind.Var (Kind.fresh_var checker.kvargen))
+      in
+      match
+        Hashtbl.add tvar_map ~key:str ~data:(Type.of_node (Type.Var tvar))
+      with
+      | `Duplicate -> Error (Sequence.return (Message.Redefined_typevar str))
+      | `Ok -> Ok (tvar::list)
+    ) ~init:(Ok []) adt.Ast.typeparams
+  >>= fun tvar_list ->
+  List.fold_right ~f:(fun (name, product) acc ->
+      acc >>= fun (list, idx) ->
+      match Hashtbl.add constr_map ~key:name ~data:idx with
+      | `Duplicate -> Error (Sequence.return (Message.Redefined_constr name))
+      | `Ok ->
+         List.fold_right ~f:(fun ty acc ->
+             acc >>= fun list ->
+             normalize checker tvar_map ty >>= fun ty ->
+             kind_of_type checker ty >>= fun kind ->
+             unify_kinds kind Kind.Mono >>| fun () ->
+             ty::list
+           ) ~init:(Ok []) product
+         >>| fun product ->
+         ((name, product)::list, idx + 1)
+    ) ~init:(Ok ([], 0)) adt.Ast.constrs
+  >>| fun (constrs, _) ->
+  let constrs = Array.of_list constrs in
+  Type.{ name =
+           begin match checker.structure.Module.prefix with
+           | Some prefix -> Ident.Dot(prefix, adt.Ast.name)
+           | None -> Ident.Root(adt.Ast.name)
+           end
+       ; typeparams = tvar_list
+       ; constr_names = constr_map
+       ; constrs }
 
 let in_new_level f st =
   st.level <- st.level + 1;

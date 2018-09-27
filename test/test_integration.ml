@@ -70,7 +70,7 @@ let test (input, phase) =
     test_phase (Desugar.term_of_expr desugarer env) Desugar input next phase
   in
   next >>= fun next ->
-  let typechecker = Typecheck.create symtable in
+  let typechecker = Typecheck.create symtable structure in
   let next = test_phase (Typecheck.infer typechecker) Typecheck input next phase
   in next
 

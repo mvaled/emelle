@@ -13,7 +13,7 @@ let () =
     let desugarer = Desugar.create structure symtable in
     let result = Desugar.term_of_expr desugarer env ast in
     result >>= fun term ->
-    let typechecker = Typecheck.create symtable in
+    let typechecker = Typecheck.create symtable structure in
     Typecheck.infer typechecker term
   with
   | Ok ty ->
