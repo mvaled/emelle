@@ -7,8 +7,12 @@
 
 open Base
 
+type ty_state =
+  | Compiled of Type.decl
+  | Todo of Kind.t
+
 type t =
-  { typedefs : (Ident.t, Type.decl) Hashtbl.t
+  { typedefs : (Ident.t, ty_state) Hashtbl.t
   ; constrs : (Ident.t, Type.adt * int) Hashtbl.t
   ; vals : (Ident.t, Type.t * Lambda.t) Hashtbl.t }
 
@@ -20,3 +24,10 @@ let create () =
 let find_typedef self name = Hashtbl.find self.typedefs name
 let find_adt self constr = Hashtbl.find self.constrs constr
 let find_val self name = Hashtbl.find self.vals name
+
+let kind_of_ident self name =
+  match find_typedef self name with
+  | Some (Compiled (Type.Manifest adt)) -> Some (Type.kind_of_adt adt)
+  | Some (Compiled (Type.Abstract kind)) -> Some kind
+  | Some (Todo kind) -> Some kind
+  | None -> None

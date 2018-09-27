@@ -44,7 +44,7 @@ type adt =
 
 type decl =
   | Abstract of Kind.t
-  | Adt of adt
+  | Manifest of adt
 
 let equal_prim x y = (compare_prim x y) = 0
 

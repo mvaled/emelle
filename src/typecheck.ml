@@ -57,8 +57,8 @@ let rec kind_of_type checker ty =
      unify_kinds conkind (Kind.Poly(argkind, kvar)) >>| fun () ->
      kvar
   | Type.Nominal id ->
-     begin match Hashtbl.find checker.types id with
-     | Some adt -> Ok (Type.kind_of_adt adt)
+     begin match Symtable.kind_of_ident checker.symtable id with
+     | Some kind -> Ok kind
      | None -> Error (Sequence.return (Message.Unresolved_type id))
      end
   | Type.Prim Type.Arrow ->
