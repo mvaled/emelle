@@ -18,14 +18,13 @@ let fresh_register st =
 (** [pattern_of_ast_pattern state map reg ast_pat] converts [ast_pat] from an
     [Ast.pattern] to [Term.ml] while collecting bound identifiers in [map],
     returning `Error` if a data constructor or type isn't defined. *)
-let rec term_pattern_of_ast_pattern st map reg (_, node) =
+let rec term_pattern_of_ast_pattern st map reg_opt (_, node) =
   let open Result.Monad_infix in
   match node with
   | Ast.Con(constr_path, pats) ->
      let f next acc =
        acc >>= fun (pats, map) ->
-       let reg = fresh_register st in
-       term_pattern_of_ast_pattern st map reg next >>| fun (pat, map) ->
+       term_pattern_of_ast_pattern st map None next >>| fun (pat, map) ->
        (pat::pats, map)
      in
      begin match
@@ -34,14 +33,19 @@ let rec term_pattern_of_ast_pattern st map reg (_, node) =
      | None -> Error (Sequence.return (Message.Unresolved_path constr_path))
      | Some (typename, idx) ->
         List.fold_right ~f:f ~init:(Ok ([], map)) pats >>| fun (pats, map) ->
-        (Term.{node = Term.Con(typename, idx, pats); reg = Some reg}, map)
+        (Term.{node = Term.Con(typename, idx, pats); reg = reg_opt}, map)
      end
   | Ast.Var name ->
+     let reg =
+       match reg_opt with
+       | Some reg -> reg
+       | None -> fresh_register st
+     in
      begin match Map.add map ~key:name ~data:reg with
      | `Ok map -> Ok (Term.{node = Term.Wild; reg = Some reg}, map)
      | `Duplicate -> Error (Sequence.return (Message.Redefined_name name))
      end
-  | Ast.Wild -> Ok (Term.{node = Term.Wild; reg = Some reg}, map)
+  | Ast.Wild -> Ok (Term.{node = Term.Wild; reg = reg_opt}, map)
 
 (** [term_of_expr desugarer env expr] converts [expr] from an [Ast.expr] to a
     [Term.t]. *)
@@ -62,9 +66,7 @@ let rec term_of_expr st env (ann, node) =
          ~f:(fun (pat, expr) acc ->
            acc >>= fun cases ->
            let map = Map.empty (module String) in
-           (* The register to store the pattern match result in *)
-           let reg = fresh_register st in
-           term_pattern_of_ast_pattern st map reg pat >>= fun (pat, map) ->
+           term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
            Env.in_scope_with (fun env ->
                term_of_expr st env expr
              ) map env >>| fun body ->
@@ -77,12 +79,10 @@ let rec term_of_expr st env (ann, node) =
        let regs = List.map ~f:(fun _ -> fresh_register st) patterns in
        let handle_branch (pat, pats, expr) =
          let map = Map.empty (module String) in
-         let tmp_reg = fresh_register st in
-         term_pattern_of_ast_pattern st map tmp_reg pat >>= fun (pat, map) ->
+         term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
          List.fold_right ~f:(fun pat acc ->
              acc >>= fun (list, map) ->
-             let reg = fresh_register st in
-             term_pattern_of_ast_pattern st map reg pat >>| fun (pat, map) ->
+             term_pattern_of_ast_pattern st map None pat >>| fun (pat, map) ->
              (pat::list, map)
            ) ~init:(Ok ([], map)) pats >>= fun (pats, map) ->
          Env.in_scope_with (fun env ->
@@ -107,8 +107,7 @@ let rec term_of_expr st env (ann, node) =
          | [] -> Env.in_scope_with (fun env -> term_of_expr st env body) map env
          | (pat, def)::bindings ->
             term_of_expr st env def >>= fun def ->
-            let reg = fresh_register st in
-            term_pattern_of_ast_pattern st map reg pat >>= fun (pat, map) ->
+            term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
             f map bindings >>| fun cont ->
             Term.Case(def, [], [(pat, [], cont)])
        in f (Map.empty (module String)) bindings
