@@ -5,8 +5,8 @@ let rec lower symtbl =
   function
   | Term.Ann { term; _ } -> lower symtbl term
   | Term.App(f, x) ->
-     lower f symtbl >>= fun f ->
-     lower x symtbl >>| fun x ->
+     lower symtbl f >>= fun f ->
+     lower symtbl x >>| fun x ->
      Lambda.App(f, x)
   | Term.Case(discriminant, discriminants, cases) ->
      List.fold_right ~f:(fun (first_pattern, rest_patterns, term) acc ->
