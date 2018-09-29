@@ -277,56 +277,80 @@ let rec infer checker =
 
   | Term.App(f, x) ->
      begin match infer checker f, infer checker x with
-     | (Ok f_ty, Ok x_ty) ->
+     | (Ok f, Ok x) ->
         let var = fresh_tvar checker in
-        let result = unify_types checker f_ty (Type.arrow x_ty var) in
-        result >>| fun () -> var
+        let result =
+          unify_types checker f.Lambda.ty (Type.arrow x.Lambda.ty var)
+        in
+        result >>| fun () ->
+        Lambda.{ ty = var; expr = Lambda.App(f, x) }
      | (Error f_err, Error x_err) -> Error (Sequence.append f_err x_err)
      | (err, Ok _) | (Ok _, err) -> err
      end
 
   | Term.Case(discriminant, discriminants, cases) ->
      let out_ty = fresh_tvar checker in
+     in_new_level (fun checker ->
+         infer checker discriminant
+       ) checker >>= fun discr ->
      List.fold_right ~f:(fun discriminant acc ->
          acc >>= fun list ->
          in_new_level (fun checker ->
              infer checker discriminant
-           ) checker >>| fun ty ->
-         ty::list
-       ) ~init:(Ok []) (discriminant::discriminants) >>= fun discr_tys ->
-     let rec f discr_tys pats =
-       match discr_tys, pats with
+           ) checker >>| fun expr ->
+         expr::list
+       ) ~init:(Ok []) discriminants >>= fun discrs ->
+     let rec f discrs pats =
+       match discrs, pats with
        | [], [] -> Ok ()
        | [], _ | _, [] -> Error Sequence.empty
-       | ty::tys, pat::pats ->
-          infer_pattern checker ty pat >>= fun () ->
-          f tys pats
+       | discr::discrs, pat::pats ->
+          infer_pattern checker discr.Lambda.ty pat >>= fun () ->
+          f discrs pats
      in
-     List.fold ~f:(fun acc (pat, pats, consequent) ->
-         acc >>= fun () ->
+     List.fold_right ~f:(fun (pat, pats, consequent) acc ->
+         acc >>= fun list ->
          in_new_level (fun _ ->
-             f discr_tys (pat::pats)
+             infer_pattern checker discr.Lambda.ty pat
            ) checker >>= fun () ->
-         infer checker consequent >>= fun ty ->
-         unify_types checker ty out_ty
-       ) ~init:(Ok ()) cases >>| fun () -> out_ty
+         in_new_level (fun _ ->
+             f discrs pats
+           ) checker >>= fun () ->
+         infer checker consequent >>= fun consequent ->
+         unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
+         Pattern.{ first_pattern = pat
+                 ; rest_patterns = pats
+                 ; action = consequent }::list
+       ) ~init:(Ok []) cases >>= fun matrix ->
+     Pattern.decision_tree_of_matrix
+       (let (occurrences, _) =
+          List.fold ~f:(fun (list, i) _ ->
+              ([i]::list, i + 1)
+            ) ~init:([], 0) (discriminant::discriminants)
+        in occurrences)
+       checker.symtable matrix >>| fun decision_tree ->
+     Lambda.{ ty = out_ty; expr = Lambda.Case(discr, discrs, decision_tree) }
 
   | Term.Extern_var id ->
      begin match Symtable.find_val checker.symtable id with
-     | Some (ty, _) -> Ok (inst checker (checker.level + 1) ty)
+     | Some (ty, _) ->
+        Ok Lambda.{ ty = inst checker (checker.level + 1) ty
+                  ; expr = Lambda.Extern_var id }
      | None -> Error (Sequence.return (Message.Unresolved_id id))
      end
 
   | Term.Lam(id, body) ->
      let var = fresh_tvar checker in
      Hashtbl.add_exn checker.env ~key:id ~data:var;
-     infer checker body >>= fun body_ty ->
-     Ok (Type.arrow var body_ty)
+     infer checker body >>= fun body ->
+     Ok Lambda.{ ty = Type.arrow var body.Lambda.ty
+               ; expr = Lambda.Lam(id, body) }
 
   | Term.Let(lhs, rhs, body) ->
-     in_new_level (fun checker -> infer checker rhs) checker >>= fun ty ->
-     Hashtbl.add_exn checker.env ~key:lhs ~data:ty;
-     infer checker body
+     in_new_level (fun checker -> infer checker rhs) checker >>= fun rhs ->
+     Hashtbl.add_exn checker.env ~key:lhs ~data:rhs.Lambda.ty;
+     infer checker body >>| fun body ->
+     Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
 
   | Term.Let_rec(bindings, body) ->
      let result =
@@ -339,18 +363,23 @@ let rec infer checker =
            List.iter ~f:f bindings;
            (* Type infer the RHS of each new binding and unify the result with
               the type variable *)
-           let f acc (lhs, rhs) =
+           let f (lhs, rhs) acc =
              let tvar = Hashtbl.find_exn checker.env lhs in
-             infer checker rhs >>= fun ty ->
-             match acc, unify_types checker tvar ty with
-             | Ok (), Ok () -> Ok ()
-             | Ok (), Error e | Error e, Ok () -> Error e
+             infer checker rhs >>= fun rhs ->
+             match acc, unify_types checker tvar rhs.Lambda.ty with
+             | Ok acc, Ok () -> Ok ((lhs, rhs)::acc)
+             | Ok _, Error e | Error e, Ok () -> Error e
              | Error e1, Error e2 -> Error (Sequence.append e1 e2)
-           in List.fold ~f:f ~init:(Ok ()) bindings
+           in List.fold_right ~f:f ~init:(Ok []) bindings
          ) checker
-     in result >>= fun () -> infer checker body
+     in
+     result >>= fun bindings ->
+     infer checker body >>| fun body ->
+     Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
 
   | Term.Var reg ->
      match Hashtbl.find checker.env reg with
-     | Some ty -> Ok (inst checker (checker.level + 1) ty)
+     | Some ty ->
+        Ok Lambda.{ ty = inst checker (checker.level + 1) ty
+                  ; expr = Lambda.Local_var reg }
      | None -> Error (Sequence.return Message.Unreachable)

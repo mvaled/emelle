@@ -16,8 +16,8 @@ let () =
     let typechecker = Typecheck.create symtable structure in
     Typecheck.infer typechecker term
   with
-  | Ok ty ->
+  | Ok lambda ->
      let pprinter = Prettyprint.create () in
-     Prettyprint.print_type pprinter (-1) ty;
+     Prettyprint.print_type pprinter (-1) lambda.Lambda.ty;
      print_endline (Prettyprint.to_string pprinter)
   | Error _ -> ()

@@ -1,6 +1,7 @@
 open Base
 
-type t =
+type t = {ty : Type.t; expr : expr}
+and expr =
   | App of t * t
   | Case of t * t list * t Pattern.decision_tree
   | Extern_var of Ident.t
