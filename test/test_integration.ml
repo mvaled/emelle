@@ -62,15 +62,15 @@ let test (input, phase) =
       )) Syntax input input phase
   in
   next >>= fun next ->
-  let symtable = Symtable.create () in
+  let package = Package.create "" in
   let env = Env.empty (module String) in
-  let structure = Module.create None in
-  let desugarer = Desugar.create structure symtable in
+  let packages = Hashtbl.create (module String) in
+  let desugarer = Desugar.create package packages in
   let next =
     test_phase (Desugar.term_of_expr desugarer env) Desugar input next phase
   in
   next >>= fun next ->
-  let typechecker = Typecheck.create symtable structure in
+  let typechecker = Typecheck.create package packages in
   let next = test_phase (Typecheck.infer typechecker) Typecheck input next phase
   in next
 

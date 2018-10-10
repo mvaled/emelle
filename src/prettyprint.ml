@@ -7,13 +7,10 @@ let create () = { buffer = Buffer.create 12 }
 
 let to_string pp = Buffer.contents pp.buffer
 
-let rec print_ident pp = function
-  | Ident.Root str ->
-     Buffer.add_string pp.buffer str
-  | Ident.Dot(id, str) ->
-     print_ident pp id;
-     Buffer.add_string pp.buffer "::";
-     Buffer.add_string pp.buffer str
+let print_ident pp (package, name) =
+     Buffer.add_string pp.buffer package;
+     Buffer.add_string pp.buffer ".";
+     Buffer.add_string pp.buffer name
 
 let with_necessary_parens f pp parent_prec prec =
   if parent_prec >= prec then (

@@ -108,7 +108,7 @@ let swap_occurrences idx (occurrences : int list list) =
   | None -> None
 
 (** Compilation scheme CC *)
-let rec decision_tree_of_matrix occurrences env =
+let rec decision_tree_of_matrix occurrences =
   let open Result.Monad_infix in
   function
   | [] -> Ok Fail (* Case 1 *)
@@ -137,13 +137,13 @@ let rec decision_tree_of_matrix occurrences env =
                   match specialize id (List.length products) rows with
                   | [] -> Ok ()
                   | matrix ->
-                     match decision_tree_of_matrix match_occs env matrix with
+                     match decision_tree_of_matrix match_occs matrix with
                      | Ok tree ->
                         Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
                         Ok ()
                      | Error e -> Error e
                 ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
-              decision_tree_of_matrix rest_occs env default
+              decision_tree_of_matrix rest_occs default
               >>| fun default_tree ->
               let switch =
                 Switch(first_occ, reg, alg, jump_tbl, default_tree)

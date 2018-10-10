@@ -1,26 +1,31 @@
 open Base
 
 type t =
-  { symtable : Symtable.t
+  { package : Package.t
+  ; packages : (string, Package.t) Hashtbl.t
   ; env : (int, Type.t) Hashtbl.t
   ; mutable level : int
   ; tvargen : Type.vargen
-  ; kvargen : Kind.vargen
-  ; structure : Module.t }
+  ; kvargen : Kind.vargen }
 
 (** [create symtable] creates a fresh typechecker state. *)
-let create symtable structure =
-  { symtable
+let create package packages =
+  { package
+  ; packages
   ; env = Hashtbl.create (module Int)
   ; level = 0
   ; tvargen = Type.create_vargen ()
-  ; kvargen = Kind.create_vargen ()
-  ; structure }
+  ; kvargen = Kind.create_vargen () }
 
 let fresh_tvar (checker : t) =
   Type.{ level_opt = Some checker.level
        ; node =
            Type.Var (Type.fresh_var checker.tvargen checker.level Kind.Mono) }
+
+let find f st (pack_name, item_name) =
+  match Hashtbl.find st.packages pack_name with
+  | None -> None
+  | Some package -> f package item_name
 
 (** [unify_kinds kind1 kind2] unifies the two kinds. *)
 let rec unify_kinds l r =
@@ -55,7 +60,7 @@ let rec kind_of_type checker ty =
      unify_kinds conkind (Kind.Poly(argkind, kvar)) >>| fun () ->
      kvar
   | Type.Nominal id ->
-     begin match Symtable.kind_of_ident checker.symtable id with
+     begin match find Package.kind_of_ident checker id with
      | Some kind -> Ok kind
      | None -> Error (Sequence.return (Message.Unresolved_type id))
      end
@@ -113,8 +118,7 @@ let unify_many checker ty =
       | Ok (), Ok () -> Ok ()
       | Ok (), Error e | Error e, Ok () -> Error e
       | Error e1, Error e2 -> Error (Sequence.append e1 e2)
-    )
-    ~init:(Ok ())
+    ) ~init:(Ok ())
 
 (** Convert an Ast.monotype into an Type.t *)
 let rec normalize checker tvars (_, node) =
@@ -128,11 +132,15 @@ let rec normalize checker tvars (_, node) =
   | Ast.TFloat -> Ok (Type.of_node (Type.Prim Type.Float))
   | Ast.TInt -> Ok (Type.of_node (Type.Prim Type.Int))
   | Ast.TNominal path ->
-     begin match
-       Module.resolve_path Module.find_type checker.structure path
-     with
-     | Some ident -> Ok (Type.of_node (Type.Nominal ident))
-     | None -> Error (Sequence.return (Message.Unresolved_path path))
+     let ident =
+       match path with
+       | Ast.Internal str -> (checker.package.Package.name, str)
+       | Ast.External(x, y) -> (x, y)
+     in
+     begin
+       match find Package.find_typedef checker ident with
+       | Some _ -> Ok (Type.of_node (Type.Nominal ident))
+       | None -> Error (Sequence.return (Message.Unresolved_path path))
      end
   | Ast.TVar name ->
      match Hashtbl.find tvars name with
@@ -174,11 +182,7 @@ let type_adt_of_ast_adt checker adt =
     ) ~init:(Ok ([], 0)) adt.Ast.constrs
   >>| fun (constrs, _) ->
   let constrs = Array.of_list constrs in
-  Type.{ name =
-           begin match checker.structure.Module.prefix with
-           | Some prefix -> Ident.Dot(prefix, adt.Ast.name)
-           | None -> Ident.Root(adt.Ast.name)
-           end
+  Type.{ name = (checker.package.Package.name, adt.Ast.name)
        ; typeparams = tvar_list
        ; constr_names = constr_map
        ; constrs }
@@ -328,11 +332,11 @@ let rec infer checker =
               ([i]::list, i + 1)
             ) ~init:([], 0) (discriminant::discriminants)
         in occurrences)
-       checker.symtable matrix >>| fun decision_tree ->
+       matrix >>| fun decision_tree ->
      Lambda.{ ty = out_ty; expr = Lambda.Case(discr, discrs, decision_tree) }
 
   | Term.Extern_var id ->
-     begin match Symtable.find_val checker.symtable id with
+     begin match find Package.find_val checker id with
      | Some (ty, _) ->
         Ok Lambda.{ ty = inst checker (checker.level + 1) ty
                   ; expr = Lambda.Extern_var id }

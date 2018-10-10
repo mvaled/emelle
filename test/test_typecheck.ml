@@ -24,9 +24,9 @@ let rec is_mono = function
 
 let () =
   let f x =
-    let symtable = Symtable.create () in
-    let structure = Module.create None in
-    let checker = Typecheck.create symtable structure in
+    let package = Package.create "" in
+    let packages = Hashtbl.create (module String) in
+    let checker = Typecheck.create package packages in
     match Typecheck.kind_of_type checker x with
     | Ok kind -> assert (is_mono kind)
     | Error _ -> assert false
@@ -34,9 +34,9 @@ let () =
 
 let () =
   let f x =
-    let symtable = Symtable.create () in
-    let structure = Module.create None in
-    let checker = Typecheck.create symtable structure in
+    let package = Package.create "" in
+    let packages = Hashtbl.create (module String) in
+    let checker = Typecheck.create package packages in
     match Typecheck.kind_of_type checker x with
     | Ok kind -> assert (not (is_mono kind))
     | Error _ -> assert false

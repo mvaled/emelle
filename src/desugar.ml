@@ -2,14 +2,28 @@ open Base
 
 type 'cmp t =
   { mutable vargen : int
-  ; structure : Module.t
-  ; symtable : Symtable.t }
+  ; packages : (string, Package.t) Hashtbl.t
+  ; package : Package.t }
 
 (** Create a fresh desugarer state *)
-let create structure symtable =
+let create package packages =
   { vargen = 0
-  ; structure
-  ; symtable }
+  ; package
+  ; packages }
+
+let find f st = function
+  | Ast.Internal str ->
+     begin match f st.package str with
+     | None -> None
+     | Some x -> Some ((st.package.Package.name, str), x)
+     end
+  | Ast.External(pack_name, item_name) ->
+     match Hashtbl.find st.packages pack_name with
+     | None -> None
+     | Some package ->
+        match f package item_name with
+        | None -> None
+        | Some x -> Some ((pack_name, item_name), x)
 
 let fresh_register st =
   st.vargen <- st.vargen + 1;
@@ -27,13 +41,11 @@ let rec term_pattern_of_ast_pattern st map reg_opt (_, node) =
        term_pattern_of_ast_pattern st map None next >>| fun (pat, map) ->
        (pat::pats, map)
      in
-     begin match
-       Module.resolve_path Module.find_constr st.structure constr_path
-     with
+     begin match find Package.find_adt st constr_path with
      | None -> Error (Sequence.return (Message.Unresolved_path constr_path))
-     | Some (typename, idx) ->
+     | Some (_, (adt, idx)) ->
         List.fold_right ~f:f ~init:(Ok ([], map)) pats >>| fun (pats, map) ->
-        (Term.{node = Term.Con(typename, idx, pats); reg = reg_opt}, map)
+        (Term.{node = Term.Con(adt, idx, pats); reg = reg_opt}, map)
      end
   | Ast.Var name ->
      let reg =
@@ -137,21 +149,21 @@ let rec term_of_expr st env (ann, node) =
            Term.Let_rec(bindings, body)
          ) env
 
-    | Ast.Var ((prefix, name) as path) ->
-       match prefix with
-       | [] -> (* Unqualified name *)
+    | Ast.Var qual_id ->
+       match qual_id with
+       | Ast.Internal name -> (* Unqualified name *)
           begin match Env.find env name with
           (* Found in the local environment *)
           | Some reg -> Ok (Term.Var reg)
           | None ->
-             (* Search in the current structure *)
-             match Module.find_val st.structure name with
-             | Some ident -> Ok (Term.Extern_var ident)
-             | None -> Error (Sequence.return (Message.Unresolved_path path))
+             (* Search in the current package *)
+             match find Package.find_val st qual_id with
+             | Some (ident, _) -> Ok (Term.Extern_var ident)
+             | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
           end
-       | _ -> (* Qualified name *)
-          match Module.resolve_path Module.find_val st.structure path with
-          | None -> Ok (Term.Extern_var (Ident.of_path path))
-          | Some ident -> Ok (Term.Extern_var ident)
+       | Ast.External _ -> (* Qualified name *)
+          match find Package.find_val st qual_id with
+          | Some (ident, _) -> Ok (Term.Extern_var ident)
+          | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })

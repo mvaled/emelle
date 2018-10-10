@@ -7,13 +7,13 @@ let () =
   match
     let lexbuf = Lexing.from_channel stdin in
     let ast = Parser.expr_eof Lexer.expr lexbuf in
-    let symtable = Symtable.create () in
+    let package = Package.create "" in
     let env = Env.empty (module String) in
-    let structure = Module.create None in
-    let desugarer = Desugar.create structure symtable in
+    let packages = Hashtbl.create (module String) in
+    let desugarer = Desugar.create package packages in
     let result = Desugar.term_of_expr desugarer env ast in
     result >>= fun term ->
-    let typechecker = Typecheck.create symtable structure in
+    let typechecker = Typecheck.create package packages in
     Typecheck.infer typechecker term
   with
   | Ok lambda ->

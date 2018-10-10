@@ -1,6 +1,8 @@
 open Base
 
-type path = string list * string
+type qual_id =
+  | External of string * string
+  | Internal of string
 
 type 'a monotype = 'a * 'a monotype'
 and 'a monotype' =
@@ -8,14 +10,14 @@ and 'a monotype' =
   | TArrow
   | TFloat
   | TInt
-  | TNominal of path
+  | TNominal of qual_id
   | TVar of string
 
 type 'a polytype = Forall of string list * 'a monotype
 
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =
-  | Con of path * 'a pattern list
+  | Con of qual_id * 'a pattern list
   | Var of string
   | Wild
 
@@ -26,7 +28,7 @@ and 'a expr' =
   | Lam of 'a lambda_case * 'a lambda_case list
   | Let of ('a pattern * 'a expr) list * 'a expr
   | Let_rec of (string * 'a expr) list * 'a expr
-  | Var of path
+  | Var of qual_id
 and 'a lambda_case = 'a pattern * 'a pattern list * 'a expr
 
 type 'a adt =

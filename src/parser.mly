@@ -10,6 +10,7 @@
 %token IN
 %token LET
 %token REC
+%token SELF
 %token THEN
 %token TYPE
 %token WITH
@@ -42,13 +43,14 @@ expr_eof: expr EOF { $1 };
 monotype_eof: monotype EOF { $1 };
 adt_eof: adt EOF { $1 }
 
-upath: UIDENT list(DOT UIDENT { $2 }) {
-      match Base.List.rev $2 with
-      | [] -> [], $1
-      | last::rev_path -> $1::(Base.List.rev rev_path), last
-    }
+qual_uid:
+  | UIDENT DOT UIDENT { Ast.External($1, $3) }
+  | UIDENT { Ast.Internal $1 }
 
-path: list(UIDENT DOT { $1 }) LIDENT { $1, $2 }
+qual_lid:
+  | UIDENT DOT LIDENT { Ast.External($1, $3) }
+  | LIDENT { Ast.Internal $1 }
+  ;
 
 adt:
   | UIDENT list(LIDENT) EQUALS option(BAR) separated_list(BAR, constr) {
@@ -74,7 +76,7 @@ monotype_app:
   ;
 
 monotype_atom:
-  | upath { ($symbolstartpos, $endpos), (Ast.TNominal $1) }
+  | qual_uid { ($symbolstartpos, $endpos), (Ast.TNominal $1) }
   | LIDENT { ($symbolstartpos, $endpos), (Ast.TVar $1) }
   | LPARENS ARROW RPARENS { ($symbolstartpos, $endpos), Ast.TArrow }
   | LPARENS monotype RPARENS { $2 }
@@ -122,18 +124,18 @@ expr_app:
   ;
 
 expr_atom:
-  | path { (($symbolstartpos, $endpos), Ast.Var $1) }
+  | qual_lid { (($symbolstartpos, $endpos), Ast.Var $1) }
   | LPARENS expr RPARENS { $2 }
   ;
 
 pattern:
-  | upath nonempty_list(pattern) {
+  | qual_uid nonempty_list(pattern) {
         (($symbolstartpos, $endpos), Ast.Con($1, $2))
       }
   | pattern_2 { $1 }
 
 pattern_2:
-  | upath { (($symbolstartpos, $endpos), Ast.Con($1, [])) }
+  | qual_uid { (($symbolstartpos, $endpos), Ast.Con($1, [])) }
   | LIDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
   | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }
   | LPARENS pattern RPARENS { $2 }
