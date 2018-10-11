@@ -335,13 +335,9 @@ let rec infer checker =
        matrix >>| fun decision_tree ->
      Lambda.{ ty = out_ty; expr = Lambda.Case(discr, discrs, decision_tree) }
 
-  | Term.Extern_var id ->
-     begin match find Package.find_val checker id with
-     | Some (ty, _) ->
-        Ok Lambda.{ ty = inst checker (checker.level + 1) ty
-                  ; expr = Lambda.Extern_var id }
-     | None -> Error (Sequence.return (Message.Unresolved_id id))
-     end
+  | Term.Extern_var(id, ty) ->
+     Ok Lambda.{ ty = inst checker (checker.level + 1) ty
+               ; expr = Lambda.Extern_var id }
 
   | Term.Lam(id, body) ->
      let var = fresh_tvar checker in

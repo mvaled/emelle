@@ -158,12 +158,12 @@ let rec term_of_expr st env (ann, node) =
           | None ->
              (* Search in the current package *)
              match find Package.find_val st qual_id with
-             | Some (ident, _) -> Ok (Term.Extern_var ident)
+             | Some (ident, (ty, _)) -> Ok (Term.Extern_var(ident, ty))
              | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
           end
        | Ast.External _ -> (* Qualified name *)
           match find Package.find_val st qual_id with
-          | Some (ident, _) -> Ok (Term.Extern_var ident)
+          | Some (ident, (ty, _)) -> Ok (Term.Extern_var(ident, ty))
           | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })
