@@ -1,6 +1,6 @@
 open Base
 
-type 'cmp t =
+type t =
   { mutable vargen : int
   ; packages : (string, Package.t) Hashtbl.t
   ; package : Package.t }
@@ -158,12 +158,12 @@ let rec term_of_expr st env (ann, node) =
           | None ->
              (* Search in the current package *)
              match find Package.find_val st qual_id with
-             | Some (ident, (ty, _)) -> Ok (Term.Extern_var(ident, ty))
+             | Some (ident, ty) -> Ok (Term.Extern_var(ident, ty))
              | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
           end
        | Ast.External _ -> (* Qualified name *)
           match find Package.find_val st qual_id with
-          | Some (ident, (ty, _)) -> Ok (Term.Extern_var(ident, ty))
+          | Some (ident, ty) -> Ok (Term.Extern_var(ident, ty))
           | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })

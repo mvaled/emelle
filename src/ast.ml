@@ -36,6 +36,11 @@ type 'a adt =
   ; typeparams : string list
   ; constrs : (string * 'a monotype list) list }
 
+type 'a item =
+  | Adt of 'a adt
+  | Let of ('a pattern * 'a expr) list
+  | Let_rec of (string * 'a expr) list
+
 type 'a file =
   { adts : 'a adt list list
   ; expr : 'a expr }
