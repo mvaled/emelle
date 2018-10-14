@@ -37,7 +37,7 @@ module Var = struct
 end
 
 type adt =
-  { name : Ident.t
+  { name : string
   ; typeparams: var list
   ; constr_names: (string, int) Hashtbl.t
   ; constrs: (string * t list) array }

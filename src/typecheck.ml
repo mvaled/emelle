@@ -182,7 +182,7 @@ let type_adt_of_ast_adt checker adt =
     ) ~init:(Ok ([], 0)) adt.Ast.constrs
   >>| fun (constrs, _) ->
   let constrs = Array.of_list constrs in
-  Type.{ name = (checker.package.Package.name, adt.Ast.name)
+  Type.{ name = adt.Ast.name
        ; typeparams = tvar_list
        ; constr_names = constr_map
        ; constrs }
@@ -236,7 +236,10 @@ let inst_adt checker adt =
            (Type.Var
               (Type.fresh_var checker.tvargen checker.level qvar.Type.kind))
        in helper (Type.of_node (Type.App(acc, targ))) qvars
-  in helper (Type.of_node (Type.Nominal adt.Type.name)) adt.Type.typeparams
+  in
+  helper
+    (Type.of_node (Type.Nominal (checker.package.name, adt.Type.name)))
+    adt.Type.typeparams
 
 (** [infer_pattern checker polyty pat] associates [polyty] with [pat]'s register
     if it has any while unifying any type constraints that arise from [pat]. *)

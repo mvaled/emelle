@@ -11,8 +11,18 @@ let compile self env =
   function
   | Ast.Adt adt ->
      Typecheck.type_adt_of_ast_adt self.typechecker adt >>= fun adt ->
-     Package.add_adt self.package adt >>| fun () ->
-     env
+     begin match Package.find_typedef self.package adt.Type.name with
+     | None -> Error (Sequence.return Message.Unreachable)
+     | Some ptr ->
+        match !ptr with
+        | Package.Compiled _ ->
+           Error (Sequence.return (Message.Redefined_name adt.Type.name))
+        | Package.Todo kind ->
+           Typecheck.unify_kinds kind (Type.kind_of_adt adt) >>= fun () ->
+           Package.add_constrs self.package adt >>| fun () ->
+           ptr := Package.Compiled (Type.Manifest adt);
+           env
+     end
   | Ast.Let bindings ->
      List.fold ~f:(fun acc (pat, expr) ->
          acc >>= fun (env, list) ->

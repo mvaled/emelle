@@ -16,7 +16,7 @@ type command =
 
 type t =
   { name : string
-  ; typedefs : (string, ty_state) Hashtbl.t
+  ; typedefs : (string, ty_state ref) Hashtbl.t
   ; constrs : (string, Type.adt * int) Hashtbl.t
   ; vals : (string, Type.t) Hashtbl.t
   ; commands : command Queue.t }
@@ -38,12 +38,14 @@ let find_val = find (fun package -> package.vals)
 
 let kind_of_ident self name =
   match find_typedef self name with
-  | Some (Compiled (Type.Manifest adt)) -> Some (Type.kind_of_adt adt)
-  | Some (Compiled (Type.Abstract kind)) -> Some kind
-  | Some (Todo kind) -> Some kind
   | None -> None
+  | Some ptr ->
+     match !ptr with
+     | Compiled (Type.Manifest adt) -> Some (Type.kind_of_adt adt)
+     | Compiled (Type.Abstract kind) -> Some kind
+     | Todo kind -> Some kind
 
-let add_adt self adt =
+let add_constrs self adt =
   let open Result.Monad_infix in
   Hashtbl.fold
     ~f:(fun ~key:constr ~data:idx acc ->
