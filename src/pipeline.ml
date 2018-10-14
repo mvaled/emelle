@@ -25,17 +25,9 @@ let compile self env =
      end
   | Ast.Let bindings ->
      List.fold ~f:(fun acc (pat, expr) ->
-         acc >>= fun (env, list) ->
-         let map = Map.empty (module String) in
+         acc >>= fun (map, list) ->
          Desugar.term_pattern_of_ast_pattern self.desugarer map None pat
          >>= fun (pat, map) ->
-         Map.fold ~f:(fun ~key:key ~data:data acc ->
-             acc >>= fun env ->
-             match Env.add env key data with
-             | Some env -> Ok env
-             | None -> Error (Sequence.return (Message.Redefined_name key))
-           ) ~init:(Ok env) map
-         >>= fun env ->
          Desugar.term_of_expr self.desugarer env expr
          >>= fun term ->
          Typecheck.infer self.typechecker term
@@ -45,9 +37,16 @@ let compile self env =
            ]
          in
          Pattern.decision_tree_of_matrix [[0]] matrix >>| fun tree ->
-         (env, Package.Let(tree, lambda)::list)
-       ) ~init:(Ok (env, [])) bindings
-     >>| fun (env, bindings) ->
+         (map, Package.Let(tree, lambda)::list)
+       ) ~init:(Ok (Map.empty (module String), [])) bindings
+     >>= fun (map, bindings) ->
+     Map.fold ~f:(fun ~key:key ~data:data acc ->
+         acc >>= fun env ->
+         match Env.add env key data with
+         | Some env -> Ok env
+         | None -> Error (Sequence.return (Message.Redefined_name key))
+       ) ~init:(Ok env) map
+     >>| fun env ->
      List.iter ~f:(Package.add_command self.package) bindings;
      env
   | Ast.Let_rec bindings ->

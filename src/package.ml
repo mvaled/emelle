@@ -1,8 +1,7 @@
-(** The symbol table mapping:
-    - Fully qualified type constructor names to type declarations (abstract
-      types or ADTs)
-    - Fully qualified data constructor names to ADTs and the int index
-    - Fully qualified variable names to types and terms *)
+(** A processed compilation unit:
+    - Maps type constructor names to type declarations (abstract types or ADTs)
+    - Maps data constructor names to ADTs and the integer index
+    - Maps variable names to types *)
 
 open Base
 

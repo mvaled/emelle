@@ -10,6 +10,10 @@ let empty cmp =
   { curr = Map.empty cmp
   ; parents = Map.empty cmp }
 
+let of_map map =
+  { curr = map
+  ; parents = Map.empty (Map.comparator_s map) }
+
 let in_scope_with f frame env =
   let combine ~key:_ x _ = x in
   let env' =

@@ -31,7 +31,7 @@ let fresh_register st =
 
 (** [pattern_of_ast_pattern state map reg ast_pat] converts [ast_pat] from an
     [Ast.pattern] to [Term.ml] while collecting bound identifiers in [map],
-    returning `Error` if a data constructor or type isn't defined. *)
+    returning [Error] if a data constructor or type isn't defined. *)
 let rec term_pattern_of_ast_pattern st map reg_opt (_, node) =
   let open Result.Monad_infix in
   match node with
