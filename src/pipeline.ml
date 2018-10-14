@@ -14,15 +14,19 @@ let compile self env =
      Package.add_adt self.package adt >>| fun () ->
      env
   | Ast.Let bindings ->
-     List.fold
-       ~f:(fun acc (pat, expr) ->
+     List.fold ~f:(fun acc (pat, expr) ->
          acc >>= fun (env, list) ->
          let map = Map.empty (module String) in
          Desugar.term_pattern_of_ast_pattern self.desugarer map None pat
          >>= fun (pat, map) ->
-         Env.in_scope_with (fun env ->
-             Desugar.term_of_expr self.desugarer env expr
-           ) map env
+         Map.fold ~f:(fun ~key:key ~data:data acc ->
+             acc >>= fun env ->
+             match Env.add env key data with
+             | Some env -> Ok env
+             | None -> Error (Sequence.return (Message.Redefined_name key))
+           ) ~init:(Ok env) map
+         >>= fun env ->
+         Desugar.term_of_expr self.desugarer env expr
          >>= fun term ->
          Typecheck.infer self.typechecker term
          >>= fun lambda ->
@@ -38,8 +42,7 @@ let compile self env =
      env
   | Ast.Let_rec bindings ->
      (* The two List.fold(_left)s cancel out the list reversal *)
-     List.fold
-       ~f:(fun acc (name, expr) ->
+     List.fold ~f:(fun acc (name, expr) ->
          acc >>= fun (env, list) ->
          let reg = Desugar.fresh_register self.desugarer in
          match Env.add env name reg with

@@ -155,11 +155,7 @@ let rec term_of_expr st env (ann, node) =
           begin match Env.find env name with
           (* Found in the local environment *)
           | Some reg -> Ok (Term.Var reg)
-          | None ->
-             (* Search in the current package *)
-             match find Package.find_val st qual_id with
-             | Some (ident, ty) -> Ok (Term.Extern_var(ident, ty))
-             | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
+          | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
           end
        | Ast.External _ -> (* Qualified name *)
           match find Package.find_val st qual_id with
