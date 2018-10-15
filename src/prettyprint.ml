@@ -12,6 +12,14 @@ let print_ident pp (package, name) =
      Buffer.add_string pp.buffer ".";
      Buffer.add_string pp.buffer name
 
+let print_path pp = function
+  | Ast.Internal str ->
+     Buffer.add_string pp.buffer str
+  | Ast.External(l, r) ->
+     Buffer.add_string pp.buffer l;
+     Buffer.add_string pp.buffer ".";
+     Buffer.add_string pp.buffer r
+
 let with_necessary_parens f pp parent_prec prec =
   if parent_prec >= prec then (
     Buffer.add_char pp.buffer '(';
@@ -42,3 +50,22 @@ let rec print_type pp parent_prec ty =
   | Type.Var { id; _ } ->
      Buffer.add_char pp.buffer 't';
      Buffer.add_string pp.buffer (Int.to_string id)
+
+let print_error pp e =
+  begin match e with
+  | Message.Abstract_type id ->
+     Buffer.add_string pp.buffer "Abstract type ";
+     print_ident pp id
+  | Message.Unreachable str ->
+     Buffer.add_string pp.buffer "Unreachable";
+     Buffer.add_string pp.buffer str
+  | Message.Unresolved_id id ->
+     Buffer.add_string pp.buffer "Unresolved id ";
+     print_ident pp id
+  | Message.Unresolved_path path ->
+     Buffer.add_string pp.buffer "Unresolved_path ";
+     print_path pp path
+  | _ ->
+     Buffer.add_string pp.buffer "other"
+  end;
+  Buffer.add_char pp.buffer '\n'

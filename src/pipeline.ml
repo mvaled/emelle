@@ -32,7 +32,7 @@ let compile_item self env =
   | Ast.Adt adt ->
      Typecheck.type_adt_of_ast_adt self.typechecker adt >>= fun adt ->
      begin match Package.find_typedef self.package adt.Type.name with
-     | None -> Error (Sequence.return Message.Unreachable)
+     | None -> Error (Sequence.return (Message.Unreachable "Pipeline ADT"))
      | Some ptr ->
         match !ptr with
         | Package.Compiled _ ->
@@ -52,8 +52,10 @@ let compile_item self env =
          >>= fun term ->
          Typecheck.infer self.typechecker term
          >>= fun lambda ->
+         Typecheck.infer_pattern self.typechecker (lambda.Lambda.ty) pat
+         >>= fun () ->
          let matrix = [
-             Pattern.{first_pattern = pat; rest_patterns = []; action = () }
+             Pattern.{ first_pattern = pat; rest_patterns = []; action = () }
            ]
          in
          Pattern.decision_tree_of_matrix [[0]] matrix >>| fun tree ->
@@ -98,7 +100,8 @@ let export self env =
          Error (Sequence.return (Message.Unresolved_path (Ast.Internal name)))
       | Some idx ->
          match Hashtbl.find self.typechecker.Typecheck.env idx with
-         | None -> Error (Sequence.return Message.Unreachable)
+         | None ->
+            Error (Sequence.return (Message.Unreachable "Pipeline export"))
          | Some ty ->
             match Package.add_val self.package name ty idx with
             | Some () -> Ok ()

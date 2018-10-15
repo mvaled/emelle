@@ -76,11 +76,13 @@ let test (input, phase) =
 
 let _ = List.map ~f:test tests
 
+exception Module_fail of string
+
 let tests =
-  [ "() let id = fun x -> x"
+  [ "(id) let id = fun x -> x"
   ; "() type Unit = Unit"
   ; "() type Option a = None | Some a"
-  ; "() let id = fun x -> x let id2 = fun x -> x"
+  ; "(id2, id) let id = fun x -> x let id2 = id"
   ; "() type Foo = Foo type Bar = Bar Foo"
   ; "() type List a = Nil | Cons a (List a)"
   ]
@@ -92,5 +94,9 @@ let _ =
         |> Pipeline.compile (Hashtbl.create (module String)) "main"
       with
       | Ok _ -> ()
-      | Error _ -> assert false
+      | Error e ->
+         let pp = Emelle.Prettyprint.create () in
+         Sequence.iter ~f:(Emelle.Prettyprint.print_error pp) e;
+         Stdio.print_endline (Emelle.Prettyprint.to_string pp);
+         raise (Module_fail test)
     ) tests

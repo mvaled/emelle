@@ -13,7 +13,7 @@ type error =
   | Type_unification_fail of Type.t * Type.t
   | Unimplemented of string
   | Unknown_constr of Ident.t * string
-  | Unreachable
+  | Unreachable of string
   | Unresolved_id of Ident.t
   | Unresolved_path of Ast.qual_id
   | Unresolved_type of Ident.t

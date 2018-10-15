@@ -257,7 +257,8 @@ let rec infer_pattern checker polyty pat =
      | Some reg ->
         match Hashtbl.add checker.env ~key:reg ~data:polyty with
         | `Ok -> Ok ()
-        | `Duplicate -> Error (Sequence.return Message.Unreachable)
+        | `Duplicate ->
+           Error (Sequence.return (Message.Unreachable "Tc pat con"))
      end >>= fun () ->
      let (_, products) = adt.Type.constrs.(idx) in
      let rec f pats tys =
@@ -274,7 +275,8 @@ let rec infer_pattern checker polyty pat =
      | Some reg ->
         match Hashtbl.add checker.env ~key:reg ~data:polyty with
         | `Ok -> Ok ()
-        | `Duplicate -> Error (Sequence.return Message.Unreachable)
+        | `Duplicate ->
+           Error (Sequence.return (Message.Unreachable "Tc pat wild"))
 
 (** [infer typechecker term] infers the type of [term], returning a result. *)
 let rec infer checker =
@@ -385,4 +387,4 @@ let rec infer checker =
      | Some ty ->
         Ok Lambda.{ ty = inst checker (checker.level + 1) ty
                   ; expr = Lambda.Local_var reg }
-     | None -> Error (Sequence.return Message.Unreachable)
+     | None -> Error (Sequence.return (Message.Unreachable "Tc expr var"))
