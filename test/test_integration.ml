@@ -58,7 +58,7 @@ let test (input, phase) =
   let open Option.Monad_infix in
   let next =
     test_phase (optionally (fun str ->
-              Parser.file Lexer.expr (Lexing.from_string str)
+              Parser.expr_eof Lexer.expr (Lexing.from_string str)
       )) Syntax input input phase
   in
   next >>= fun next ->
@@ -75,3 +75,22 @@ let test (input, phase) =
   in next
 
 let _ = List.map ~f:test tests
+
+let tests =
+  [ "() let id = fun x -> x"
+  ; "() type Unit = Unit"
+  ; "() type Option a = None | Some a"
+  ; "() let id = fun x -> x let id2 = fun x -> x"
+  ; "() type Foo = Foo type Bar = Bar Foo"
+  ; "() type List a = Nil | Cons a (List a)"
+  ]
+
+let _ =
+  List.iter ~f:(fun test ->
+      match
+        Parser.file Lexer.expr (Lexing.from_string test)
+        |> Pipeline.compile (Hashtbl.create (module String)) "main"
+      with
+      | Ok _ -> ()
+      | Error _ -> assert false
+    ) tests

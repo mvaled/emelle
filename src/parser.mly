@@ -31,14 +31,14 @@
 
 %token EOF
 
-%start <(Lexing.position * Lexing.position) Ast.expr> file
+%start <(Lexing.position * Lexing.position) Ast.file> file
 %start <(Lexing.position * Lexing.position) Ast.expr> expr_eof
 %start <(Lexing.position * Lexing.position) Ast.monotype> monotype_eof
 %start <(Lexing.position * Lexing.position) Ast.adt> adt_eof
 
 %%
 
-file: expr EOF { $1 };
+file: package EOF { $1 };
 expr_eof: expr EOF { $1 };
 monotype_eof: monotype EOF { $1 };
 adt_eof: adt EOF { $1 }
@@ -50,6 +50,17 @@ qual_uid:
 qual_lid:
   | UIDENT DOT LIDENT { Ast.External($1, $3) }
   | LIDENT { Ast.Internal $1 }
+  ;
+
+package:
+  | LPARENS exports = separated_list(COMMA, LIDENT) RPARENS items = list(item) {
+      Ast.{ items = items; exports = exports }
+    }
+
+item:
+  | LET separated_list(AND, binding) { Ast.Let $2 }
+  | LET REC separated_list(AND, rec_binding) { Ast.Let_rec $3 }
+  | TYPE adt { Ast.Adt $2 }
   ;
 
 adt:

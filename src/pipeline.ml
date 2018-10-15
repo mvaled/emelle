@@ -6,7 +6,27 @@ type t =
   ; packages : (string, Package.t) Hashtbl.t
   ; package : Package.t }
 
-let compile self env =
+let create name packages =
+  let package = Package.create name in
+  let _ = Hashtbl.add packages ~key:name ~data:package in
+  { desugarer = Desugar.create package packages
+  ; typechecker = Typecheck.create package packages
+  ; package
+  ; packages }
+
+let precompile self =
+  let open Result.Monad_infix in
+  List.fold ~f:(fun acc next ->
+      acc >>= fun () ->
+      match next with
+      | Ast.Adt adt ->
+         let kvar = Kind.fresh_var self.typechecker.Typecheck.kvargen in
+         Package.add_typedef
+           self.package adt.Ast.name (Package.Todo (Kind.Var kvar))
+      | _ -> Ok ()
+    ) ~init:(Ok ())
+
+let compile_item self env =
   let open Result.Monad_infix in
   function
   | Ast.Adt adt ->
@@ -68,3 +88,31 @@ let compile self env =
      >>| fun bindings ->
      Package.add_command self.package (Package.Let_rec bindings);
      env
+
+let export self env =
+  let open Result.Monad_infix in
+  List.fold ~f:(fun acc name ->
+      acc >>= fun () ->
+      match Env.find env name with
+      | None ->
+         Error (Sequence.return (Message.Unresolved_path (Ast.Internal name)))
+      | Some idx ->
+         match Hashtbl.find self.typechecker.Typecheck.env idx with
+         | None -> Error (Sequence.return Message.Unreachable)
+         | Some ty ->
+            match Package.add_val self.package name ty idx with
+            | Some () -> Ok ()
+            | None -> Error (Sequence.return (Message.Reexported_name name))
+    ) ~init:(Ok ())
+
+let compile packages name ast_package =
+  let open Result.Monad_infix in
+  let st = create name packages in
+  precompile st ast_package.Ast.items
+  >>= fun () ->
+  List.fold ~f:(fun acc item ->
+      acc >>= fun env ->
+      compile_item st env item
+    ) ~init:(Ok (Env.empty (module String))) ast_package.Ast.items
+  >>= fun env ->
+  export st env ast_package.Ast.exports

@@ -42,5 +42,5 @@ type 'a item =
   | Let_rec of (string * 'a expr) list
 
 type 'a file =
-  { adts : 'a adt list list
-  ; expr : 'a expr }
+  { exports : string list
+  ; items : 'a item list }

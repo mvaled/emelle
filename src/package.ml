@@ -17,7 +17,7 @@ type t =
   { name : string
   ; typedefs : (string, ty_state ref) Hashtbl.t
   ; constrs : (string, Type.adt * int) Hashtbl.t
-  ; vals : (string, Type.t) Hashtbl.t
+  ; vals : (string, Type.t * int) Hashtbl.t
   ; commands : command Queue.t }
 
 let create name =
@@ -44,6 +44,11 @@ let kind_of_ident self name =
      | Compiled (Type.Abstract kind) -> Some kind
      | Todo kind -> Some kind
 
+let add_typedef self name typedef =
+  match Hashtbl.add self.typedefs ~key:name ~data:(ref typedef) with
+  | `Ok -> Ok ()
+  | `Duplicate -> Error (Sequence.return (Message.Redefined_name name))
+
 let add_constrs self adt =
   let open Result.Monad_infix in
   Hashtbl.fold
@@ -53,6 +58,11 @@ let add_constrs self adt =
       | `Ok -> Ok ()
       | `Duplicate -> Error (Sequence.return (Message.Redefined_constr constr))
     ) ~init:(Ok ()) adt.Type.constr_names
+
+let add_val self name ty reg =
+  match Hashtbl.add self.vals ~key:name ~data:(ty, reg) with
+  | `Ok -> Some ()
+  | `Duplicate -> None
 
 let add_command self command =
   Queue.enqueue self.commands command

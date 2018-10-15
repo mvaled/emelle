@@ -9,6 +9,7 @@ type error =
   | Redefined_constr of string
   | Redefined_name of string
   | Redefined_typevar of string
+  | Reexported_name of string
   | Type_unification_fail of Type.t * Type.t
   | Unimplemented of string
   | Unknown_constr of Ident.t * string
