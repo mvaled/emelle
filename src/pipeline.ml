@@ -78,7 +78,12 @@ let compile_item self env =
          let reg = Desugar.fresh_register self.desugarer in
          match Env.add env name reg with
          | None -> Error (Sequence.return (Message.Redefined_name name))
-         | Some env -> Ok (env, (reg, expr)::list)
+         | Some env ->
+            let tvar = Typecheck.fresh_tvar self.typechecker in
+            match Hashtbl.add self.typechecker.env ~key:reg ~data:tvar with
+            | `Duplicate ->
+               Error (Sequence.return (Message.Unreachable "Pipeline let rec"))
+            | `Ok -> Ok (env, (reg, expr)::list)
        ) ~init:(Ok (env, [])) bindings
      >>= fun (env, bindings) ->
      List.fold ~f:(fun acc (reg, expr) ->

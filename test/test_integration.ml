@@ -85,6 +85,7 @@ let tests =
   ; "(id2, id) let id = fun x -> x let id2 = id"
   ; "() type Foo = Foo type Bar = Bar Foo"
   ; "() type List a = Nil | Cons a (List a)"
+  ; "(id, id2) let rec id = fun x -> x and id2 = id"
   ]
 
 let _ =

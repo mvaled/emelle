@@ -358,27 +358,25 @@ let rec infer checker =
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
 
   | Term.Let_rec(bindings, body) ->
-     let result =
-       in_new_level (fun checker ->
-           (* Associate each new binding with a fresh type variable *)
-           let f (lhs, _) =
-             let ty = fresh_tvar checker in
-             Hashtbl.add_exn checker.env ~key:lhs ~data:ty
-           in
-           List.iter ~f:f bindings;
-           (* Type infer the RHS of each new binding and unify the result with
-              the type variable *)
-           let f (lhs, rhs) acc =
-             let tvar = Hashtbl.find_exn checker.env lhs in
-             infer checker rhs >>= fun rhs ->
-             match acc, unify_types checker tvar rhs.Lambda.ty with
-             | Ok acc, Ok () -> Ok ((lhs, rhs)::acc)
-             | Ok _, Error e | Error e, Ok () -> Error e
-             | Error e1, Error e2 -> Error (Sequence.append e1 e2)
-           in List.fold_right ~f:f ~init:(Ok []) bindings
-         ) checker
-     in
-     result >>= fun bindings ->
+     in_new_level (fun checker ->
+         (* Associate each new binding with a fresh type variable *)
+         let f (lhs, _) =
+           let ty = fresh_tvar checker in
+           Hashtbl.add_exn checker.env ~key:lhs ~data:ty
+         in
+         List.iter ~f:f bindings;
+         (* Type infer the RHS of each new binding and unify the result with
+            the type variable *)
+         let f (lhs, rhs) acc =
+           let tvar = Hashtbl.find_exn checker.env lhs in
+           infer checker rhs >>= fun rhs ->
+           match acc, unify_types checker tvar rhs.Lambda.ty with
+           | Ok acc, Ok () -> Ok ((lhs, rhs)::acc)
+           | Ok _, Error e | Error e, Ok () -> Error e
+           | Error e1, Error e2 -> Error (Sequence.append e1 e2)
+         in List.fold_right ~f:f ~init:(Ok []) bindings
+       ) checker
+     >>= fun bindings ->
      infer checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
 
