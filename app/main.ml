@@ -15,9 +15,11 @@ let () =
     result >>= fun term ->
     let typechecker = Typecheck.create package packages in
     Typecheck.infer typechecker term
+    >>| fun lambda ->
+    Typecheck.gen typechecker lambda.Lambda.ty
   with
-  | Ok lambda ->
+  | Ok ty->
      let pprinter = Prettyprint.create () in
-     Prettyprint.print_type pprinter (-1) lambda.Lambda.ty;
+     Prettyprint.print_type pprinter (-1) ty;
      print_endline (Prettyprint.to_string pprinter)
   | Error _ -> ()

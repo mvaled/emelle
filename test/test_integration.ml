@@ -43,8 +43,7 @@ let tests =
   ; "let id = fun x -> x in id id", End
   ; "let rec id = fun x -> x and id2 = id in id id2 (id2 id)", End
   ; "case fun x -> x with id -> id id", End
-  ; "let id = fun x -> x in case id with x -> x x", End
-  ]
+  ; "let id = fun x -> x in case id with x -> x x", End ]
 
 let test_phase f curr_phase input format phase =
   let result = f format in
@@ -85,8 +84,8 @@ let tests =
   ; "(id2, id) let id = fun x -> x let id2 = id"
   ; "() type Foo = Foo type Bar = Bar Foo"
   ; "() type List a = Nil | Cons a (List a)"
-  ; "(id, id2) let rec id = fun x -> x and id2 = id"
-  ]
+  ; "(id, id2, id3) let rec id = fun x -> x and id2 = id let id3 = id2 id id2"
+  ; "(id, id2) let id = fun x -> x let id2 = id id" ]
 
 let _ =
   List.iter ~f:(fun test ->

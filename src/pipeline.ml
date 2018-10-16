@@ -52,7 +52,10 @@ let compile_item self env =
          >>= fun term ->
          Typecheck.infer self.typechecker term
          >>= fun lambda ->
-         Typecheck.infer_pattern self.typechecker (lambda.Lambda.ty) pat
+         Typecheck.infer_pattern
+           self.typechecker
+           (Typecheck.gen self.typechecker lambda.Lambda.ty)
+           pat
          >>= fun () ->
          let matrix = [
              Pattern.{ first_pattern = pat; rest_patterns = []; action = () }
@@ -93,6 +96,12 @@ let compile_item self env =
          (reg, lambda)::list
        ) ~init:(Ok []) bindings
      >>| fun bindings ->
+     List.iter ~f:(fun (lhs, _) ->
+         Hashtbl.change self.typechecker.env lhs ~f:(function
+             | Some ty -> Some (Typecheck.gen self.typechecker ty)
+             | None -> None
+           )
+       ) bindings;
      Package.add_command self.package (Package.Let_rec bindings);
      env
 

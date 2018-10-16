@@ -18,9 +18,11 @@ let create package packages =
   ; kvargen = Kind.create_vargen () }
 
 let fresh_tvar (checker : t) =
-  Type.{ level_opt = Some checker.level
+  Type.{ level = checker.level
        ; node =
-           Type.Var (Type.fresh_var checker.tvargen checker.level Kind.Mono) }
+           Type.Var
+             (Type.fresh_var
+                checker.tvargen (Type.Exists checker.level) Kind.Mono) }
 
 let find f st (pack_name, item_name) =
   match Hashtbl.find st.packages pack_name with
@@ -155,7 +157,7 @@ let type_adt_of_ast_adt checker adt =
   List.fold_right ~f:(fun str acc ->
       acc >>= fun list ->
       let tvar =
-        Type.fresh_var checker.tvargen (-1)
+        Type.fresh_var checker.tvargen Type.Univ
           (Kind.Var (Kind.fresh_var checker.kvargen))
       in
       match
@@ -193,34 +195,49 @@ let in_new_level f st =
   st.level <- st.level - 1;
   result
 
-(** Instantiate a type scheme by replacing type variables whose levels are
-    greater than or equal to target_level with type variables of level
-    checker.level *)
-let inst checker target_level =
+(** [gen checker ty] generalizes a type by replacing existential type variables
+    of level [checker.level] or higher with a universally quantified variable.
+    Universally quantified variables really shouldn't appear in [ty], but the
+    function just ignores them. *)
+let gen checker =
   let map = Hashtbl.create (module Type.Var) in
   let rec helper ty =
     match ty.Type.node with
     | Type.App(tcon, targ) ->
-       { Type.level_opt = Some checker.level
-       ; Type.node = Type.App(helper tcon, helper targ) }
+       Type.of_node (Type.App(helper tcon, helper targ))
     | Type.Var { ty = Some ty; _ } -> helper ty
-    | Type.Var ({ ty = None; level; _ } as var) ->
-       if level < target_level then
-         ty
-       else
-         begin match Hashtbl.find map var with
-         | Some var2 -> var2
-         | None ->
-            let var2 =
-              { Type.level_opt = Some checker.level
-              ; Type.node =
-                       Type.Var
-                         (Type.fresh_var checker.tvargen checker.level var.kind)
-              }
-            in
-            Hashtbl.add_exn map ~key:var ~data:var2;
-            var2
-         end
+    | Type.Var ({ ty = None; quant; kind; _ } as var) ->
+       begin match quant with
+       | Type.Exists level when level >= checker.level ->
+          Hashtbl.find_or_add map var ~default:(fun () ->
+              Type.of_node
+                (Type.Var (Type.fresh_var checker.tvargen Type.Univ kind)))
+       | _ -> ty
+       end
+    | _ -> ty
+  in helper
+
+(** [inst checker polyty] instantiates [polyty] by replacing universally
+    quantified type variables with type variables of level [checker.level] *)
+let inst checker =
+  let map = Hashtbl.create (module Type.Var) in
+  let rec helper ty =
+    match ty.Type.node with
+    | Type.App(tcon, targ) ->
+       Type.of_node (Type.App(helper tcon, helper targ))
+    | Type.Var { ty = Some ty; _ } -> helper ty
+    | Type.Var ({ ty = None; quant; _ } as var) ->
+       begin match quant with
+       | Type.Exists _ -> ty
+       | Type.Univ ->
+          Hashtbl.find_or_add map var ~default:(fun () ->
+              Type.of_node
+                (Type.Var
+                (Type.fresh_var
+                   checker.tvargen
+                   (Type.Exists checker.level)
+                   var.kind)))
+       end
     | _ -> ty
   in helper
 
@@ -234,7 +251,8 @@ let inst_adt checker adt =
        let targ =
          Type.of_node
            (Type.Var
-              (Type.fresh_var checker.tvargen checker.level qvar.Type.kind))
+              (Type.fresh_var
+                 checker.tvargen (Type.Exists checker.level) qvar.Type.kind))
        in helper (Type.of_node (Type.App(acc, targ))) qvars
   in
   helper
@@ -248,9 +266,7 @@ let rec infer_pattern checker polyty pat =
   match pat.Term.node with
   | Term.Con(adt, idx, pats) ->
      let nom_ty = inst_adt checker adt in
-     (* The target level is the current checker level, as this function needs
-        to receive [polyty] from itself recursively. *)
-     unify_types checker (inst checker checker.level polyty) nom_ty
+     unify_types checker (inst checker polyty) nom_ty
      >>= fun () ->
      begin match pat.reg with
      | None -> Ok ()
@@ -266,7 +282,7 @@ let rec infer_pattern checker polyty pat =
        | [], [] -> Ok ()
        | [], _ | _, [] -> Error Sequence.empty
        | pat::pats, ty::tys ->
-          infer_pattern checker (inst checker (-1) ty) pat >>= fun () ->
+          infer_pattern checker ty pat >>= fun () ->
           f pats tys
      in f pats products
   | Term.Wild ->
@@ -314,13 +330,14 @@ let rec infer checker =
        | [], [] -> Ok ()
        | [], _ | _, [] -> Error Sequence.empty
        | discr::discrs, pat::pats ->
-          infer_pattern checker discr.Lambda.ty pat >>= fun () ->
+          infer_pattern checker (gen checker discr.Lambda.ty) pat
+          >>= fun () ->
           f discrs pats
      in
      List.fold_right ~f:(fun (pat, pats, consequent) acc ->
          acc >>= fun list ->
          in_new_level (fun _ ->
-             infer_pattern checker discr.Lambda.ty pat
+             infer_pattern checker (gen checker discr.Lambda.ty) pat
            ) checker >>= fun () ->
          in_new_level (fun _ ->
              f discrs pats
@@ -341,8 +358,7 @@ let rec infer checker =
      Lambda.{ ty = out_ty; expr = Lambda.Case(discr, discrs, decision_tree) }
 
   | Term.Extern_var(id, ty) ->
-     Ok Lambda.{ ty = inst checker (checker.level + 1) ty
-               ; expr = Lambda.Extern_var id }
+     Ok Lambda.{ ty = inst checker ty; expr = Lambda.Extern_var id }
 
   | Term.Lam(id, body) ->
      let var = fresh_tvar checker in
@@ -353,7 +369,7 @@ let rec infer checker =
 
   | Term.Let(lhs, rhs, body) ->
      in_new_level (fun checker -> infer checker rhs) checker >>= fun rhs ->
-     Hashtbl.add_exn checker.env ~key:lhs ~data:rhs.Lambda.ty;
+     Hashtbl.add_exn checker.env ~key:lhs ~data:(gen checker rhs.Lambda.ty);
      infer checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
 
@@ -361,8 +377,7 @@ let rec infer checker =
      in_new_level (fun checker ->
          (* Associate each new binding with a fresh type variable *)
          let f (lhs, _) =
-           let ty = fresh_tvar checker in
-           Hashtbl.add_exn checker.env ~key:lhs ~data:ty
+           Hashtbl.add_exn checker.env ~key:lhs ~data:(fresh_tvar checker)
          in
          List.iter ~f:f bindings;
          (* Type infer the RHS of each new binding and unify the result with
@@ -377,12 +392,19 @@ let rec infer checker =
          in List.fold_right ~f:f ~init:(Ok []) bindings
        ) checker
      >>= fun bindings ->
+     (* In the RHS of let-rec bindings, LHS names aren't quantified. Here,
+        quantify them for the let-rec body. *)
+     List.iter ~f:(fun (lhs, _) ->
+         Hashtbl.change checker.env lhs ~f:(function
+             | Some ty -> Some (gen checker ty)
+             | None -> None
+           )
+       ) bindings;
      infer checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
 
   | Term.Var reg ->
      match Hashtbl.find checker.env reg with
      | Some ty ->
-        Ok Lambda.{ ty = inst checker (checker.level + 1) ty
-                  ; expr = Lambda.Local_var reg }
+        Ok Lambda.{ ty = inst checker ty; expr = Lambda.Local_var reg }
      | None -> Error (Sequence.return (Message.Unreachable "Tc expr var"))

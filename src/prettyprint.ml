@@ -47,7 +47,12 @@ let rec print_type pp parent_prec ty =
      Buffer.add_string pp.buffer "Float"
   | Type.Var { ty = Some ty; _ } ->
      print_type pp parent_prec ty
-  | Type.Var { id; _ } ->
+  | Type.Var { id; quant; _ } ->
+     begin match quant with
+     | Type.Exists _ ->
+        Buffer.add_char pp.buffer '_';
+     | _ -> ()
+     end;
      Buffer.add_char pp.buffer 't';
      Buffer.add_string pp.buffer (Int.to_string id)
 

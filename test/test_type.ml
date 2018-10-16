@@ -3,8 +3,8 @@ open Emelle
 
 let vargen = Type.create_vargen ()
 
-let tvar1 = Type.fresh_var vargen 0 Kind.Mono
-let tvar2 = Type.fresh_var vargen 0 Kind.Mono
+let tvar1 = Type.fresh_var vargen (Type.Exists 0) Kind.Mono
+let tvar2 = Type.fresh_var vargen (Type.Exists 0) Kind.Mono
 
 let () =
   assert ((Type.Var.compare tvar1 tvar2) <> 0);

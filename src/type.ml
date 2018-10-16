@@ -6,8 +6,36 @@ type prim =
   | Float
 [@@deriving compare, sexp]
 
+(** Type [quant] describes whether a type variable is existentially quantified
+    within a scope or universally quantified. *)
+type quant =
+  | Exists of int
+  | Univ
+[@@deriving sexp]
+
+(* A universal level is greater than all existential levels *)
+let compare_quant l r =
+  match l, r with
+  | Univ, Univ -> 0
+  | Univ, Exists _ -> 1
+  | Exists _, Univ -> -1
+  | Exists l, Exists r -> Int.compare l r
+
+(** The level of [Univ] is [-1]; the level of [Exists level] is [level]. *)
+let level_of_quant = function
+  | Univ -> -1
+  | Exists level -> level
+
+(** Returns the greater of two ints. *)
+let max l r =
+  if l < r then
+    r
+  else
+    l
+
+(** Each type is annotated with the greatest level of its children. *)
 type t =
-  { mutable level_opt : int option
+  { mutable level : int
   ; node : t' }
 [@@deriving sexp]
 and t' =
@@ -18,7 +46,7 @@ and t' =
 [@@deriving sexp]
 and var =
   { id : int
-  ; mutable level : int
+  ; mutable quant : quant
   ; mutable ty : t option
   ; kind : Kind.t }
 [@@deriving sexp]
@@ -51,15 +79,15 @@ let equal_prim x y = (compare_prim x y) = 0
 (** [create_vargen ()] creates a fresh vargen state. *)
 let create_vargen () = { contents = 0 }
 
-let fresh_var vargen level kind =
+let fresh_var vargen quant kind =
   vargen := !vargen + 1;
-  { id = !vargen - 1; ty = None; level; kind = kind }
+  { id = !vargen - 1; ty = None; quant; kind = kind }
 
 (** [with_params ty \[a; b; ...; z\]] is (... ((ty a) b) ...z) *)
 let with_params ty =
   List.fold
     ~f:(fun acc param ->
-      { level_opt = None; node = App(acc, param) }
+      { level = max acc.level param.level; node = App(acc, param) }
     ) ~init:ty
 
 (** [curry \[a; b; ...; z\] ty] is a -> b -> ... z -> ty.
@@ -68,31 +96,33 @@ let rec curry input_tys output_ty =
   match input_tys with
   | [] -> output_ty
   | (ty::tys) ->
-     { level_opt = None
+     let out_ty = curry tys output_ty in
+     { level = max ty.level out_ty.level
      ; node = App
-                ( { level_opt = None
-                  ; node = App({ level_opt = None; node = Prim Arrow}, ty) }
-              , curry tys output_ty) }
+                ( { level = ty.level
+                  ; node = App({ level = ty.level; node = Prim Arrow}, ty) }
+              , out_ty) }
 
 (** Given an ADT and one of its constructors, return the constructor's type *)
 let type_of_constr ident adt constr =
   let _, product = adt.constrs.(constr) in
   let output_ty =
     with_params
-      { level_opt = None; node = Nominal ident }
-      (List.map ~f:(fun x -> { level_opt = None; node = Var x}) adt.typeparams)
+      { level = -1; node = Nominal ident }
+      (List.map ~f:(fun x -> { level = -1; node = Var x}) adt.typeparams)
   in curry product output_ty
 
 let kind_of_adt adt =
   Kind.curry (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams) Kind.Mono
 
 (** [occurs tvar ty] performs the occurs check, returning true if [tyvar] occurs
-    in [ty]. It adjusts the levels of unassigned typevars when necessary. *)
+    in [ty]. It ignores universally quantified type variables and adjusts the
+    levels of unassigned typevars when necessary. *)
 let rec occurs tvar ty =
-  match ty.level_opt with
-  | Some x when x < tvar.level -> false
-  | _ ->
-     ty.level_opt <- Some tvar.level;
+  match tvar.quant with
+  | Univ -> false
+  | Exists level ->
+     ty.level <- level;
      match ty.node with
      | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
      | Nominal _ -> false
@@ -100,14 +130,20 @@ let rec occurs tvar ty =
      | Var { id; _ } when id = tvar.id -> true
      | Var { ty = Some ty; _ } -> occurs tvar ty
      | Var tvar2 ->
-        if tvar2.level > tvar.level then (
-          tvar2.level <- tvar.level
+        if (level_of_quant tvar2.quant) > level then (
+          tvar2.quant <- Exists level
         );
         false
 
-let of_node node = { level_opt = None; node}
+let of_node node =
+  let level =
+    match node with
+    | App(f, x) -> max f.level x.level
+    | Var var -> level_of_quant var.quant
+    | _ -> -1
+  in { level; node }
 
 let arrow l r =
-  let arrow = { level_opt = None; node = Prim Arrow } in
-  let ty = { level_opt = None; node = App(arrow, l) } in
-  { level_opt = None; node = App(ty, r) }
+  let arrow = { level = -1; node = Prim Arrow } in
+  let ty = { level = l.level; node = App(arrow, l) } in
+  { level = max l.level r.level; node = App(ty, r) }
