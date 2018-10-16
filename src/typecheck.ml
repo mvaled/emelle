@@ -344,12 +344,13 @@ let rec infer checker =
            ) checker >>= fun () ->
          infer checker consequent >>= fun consequent ->
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
-         ( idx + 1
+         ( idx - 1
          , { Pattern.first_pattern = pat
            ; Pattern.rest_patterns = pats
            ; Pattern.action = idx }::matrix
          , consequent::branches )
-       ) ~init:(Ok (0, [], [])) cases >>= fun (_, matrix, branches) ->
+       ) ~init:(Ok (List.length cases - 1, [], [])) cases
+     >>= fun (_, matrix, branches) ->
      Pattern.decision_tree_of_matrix
        (let (occurrences, _) =
           List.fold ~f:(fun (list, i) _ ->

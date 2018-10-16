@@ -18,7 +18,7 @@ let () =
     >>| fun lambda ->
     Typecheck.gen typechecker lambda.Lambda.ty
   with
-  | Ok ty->
+  | Ok ty ->
      let pprinter = Prettyprint.create () in
      Prettyprint.print_type pprinter (-1) ty;
      print_endline (Prettyprint.to_string pprinter)
