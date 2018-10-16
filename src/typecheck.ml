@@ -335,7 +335,7 @@ let rec infer checker =
           f discrs pats
      in
      List.fold_right ~f:(fun (pat, pats, consequent) acc ->
-         acc >>= fun list ->
+         acc >>= fun (idx, matrix, branches) ->
          in_new_level (fun _ ->
              infer_pattern checker (gen checker discr.Lambda.ty) pat
            ) checker >>= fun () ->
@@ -344,10 +344,12 @@ let rec infer checker =
            ) checker >>= fun () ->
          infer checker consequent >>= fun consequent ->
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
-         Pattern.{ first_pattern = pat
-                 ; rest_patterns = pats
-                 ; action = consequent }::list
-       ) ~init:(Ok []) cases >>= fun matrix ->
+         ( idx + 1
+         , { Pattern.first_pattern = pat
+           ; Pattern.rest_patterns = pats
+           ; Pattern.action = idx }::matrix
+         , consequent::branches )
+       ) ~init:(Ok (0, [], [])) cases >>= fun (_, matrix, branches) ->
      Pattern.decision_tree_of_matrix
        (let (occurrences, _) =
           List.fold ~f:(fun (list, i) _ ->
@@ -355,7 +357,8 @@ let rec infer checker =
             ) ~init:([], 0) (discriminant::discriminants)
         in occurrences)
        matrix >>| fun decision_tree ->
-     Lambda.{ ty = out_ty; expr = Lambda.Case(discr, discrs, decision_tree) }
+     { Lambda.ty = out_ty
+     ; Lambda.expr = Lambda.Case(discr, discrs, decision_tree, branches) }
 
   | Term.Extern_var(id, ty) ->
      Ok Lambda.{ ty = inst checker ty; expr = Lambda.Extern_var id }

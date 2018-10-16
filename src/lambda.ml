@@ -3,7 +3,7 @@ open Base
 type t = {ty : Type.t; expr : expr}
 and expr =
   | App of t * t
-  | Case of t * t list * t Pattern.decision_tree
+  | Case of t * t list * int Pattern.decision_tree * t list
   | Extern_var of Ident.t
   | Lam of int * t
   | Let_rec of (int * t) list * t
