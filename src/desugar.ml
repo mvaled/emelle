@@ -72,8 +72,8 @@ let rec term_of_expr st env (ann, node) =
        | Error e1, Error e2 -> Error (Sequence.append e1 e2)
        end
 
-    | Ast.Case(discriminant, cases) ->
-       term_of_expr st env discriminant >>= fun discriminant ->
+    | Ast.Case(scrutinee, cases) ->
+       term_of_expr st env scrutinee >>= fun scrutinee ->
        List.fold_right
          ~f:(fun (pat, expr) acc ->
            acc >>= fun cases ->
@@ -84,7 +84,7 @@ let rec term_of_expr st env (ann, node) =
              ) map env >>| fun body ->
            (pat, [], body)::cases
          ) ~init:(Ok []) cases >>| fun cases ->
-       Term.Case(discriminant, [], cases)
+       Term.Case(scrutinee, [], cases)
 
     | Ast.Lam((_, patterns, _) as case, cases) ->
        let reg = fresh_register st in

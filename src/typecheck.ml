@@ -313,34 +313,34 @@ let rec infer checker =
      | (err, Ok _) | (Ok _, err) -> err
      end
 
-  | Term.Case(discriminant, discriminants, cases) ->
+  | Term.Case(scrutinee, scrutinees, cases) ->
      let out_ty = fresh_tvar checker in
      in_new_level (fun checker ->
-         infer checker discriminant
-       ) checker >>= fun discr ->
-     List.fold_right ~f:(fun discriminant acc ->
+         infer checker scrutinee
+       ) checker >>= fun scrut ->
+     List.fold_right ~f:(fun scrutinee acc ->
          acc >>= fun list ->
          in_new_level (fun checker ->
-             infer checker discriminant
+             infer checker scrutinee
            ) checker >>| fun expr ->
          expr::list
-       ) ~init:(Ok []) discriminants >>= fun discrs ->
-     let rec f discrs pats =
-       match discrs, pats with
+       ) ~init:(Ok []) scrutinees >>= fun scruts ->
+     let rec f scruts pats =
+       match scruts, pats with
        | [], [] -> Ok ()
        | [], _ | _, [] -> Error Sequence.empty
-       | discr::discrs, pat::pats ->
-          infer_pattern checker (gen checker discr.Lambda.ty) pat
+       | scrut::scruts, pat::pats ->
+          infer_pattern checker (gen checker scrut.Lambda.ty) pat
           >>= fun () ->
-          f discrs pats
+          f scruts pats
      in
      List.fold_right ~f:(fun (pat, pats, consequent) acc ->
          acc >>= fun (idx, matrix, branches) ->
          in_new_level (fun _ ->
-             infer_pattern checker (gen checker discr.Lambda.ty) pat
+             infer_pattern checker (gen checker scrut.Lambda.ty) pat
            ) checker >>= fun () ->
          in_new_level (fun _ ->
-             f discrs pats
+             f scruts pats
            ) checker >>= fun () ->
          infer checker consequent >>= fun consequent ->
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
@@ -355,11 +355,11 @@ let rec infer checker =
        (let (occurrences, _) =
           List.fold ~f:(fun (list, i) _ ->
               ([i]::list, i + 1)
-            ) ~init:([], 0) (discriminant::discriminants)
+            ) ~init:([], 0) (scrutinee::scrutinees)
         in occurrences)
        matrix >>| fun decision_tree ->
      { Lambda.ty = out_ty
-     ; Lambda.expr = Lambda.Case(discr, discrs, decision_tree, branches) }
+     ; Lambda.expr = Lambda.Case(scrut, scruts, decision_tree, branches) }
 
   | Term.Extern_var(id, ty) ->
      Ok Lambda.{ ty = inst checker ty; expr = Lambda.Extern_var id }
