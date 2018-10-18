@@ -122,18 +122,22 @@ let rec occurs tvar ty =
   match tvar.quant with
   | Univ -> false
   | Exists level ->
-     ty.level <- level;
-     match ty.node with
-     | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
-     | Nominal _ -> false
-     | Prim _ -> false
-     | Var { id; _ } when id = tvar.id -> true
-     | Var { ty = Some ty; _ } -> occurs tvar ty
-     | Var tvar2 ->
-        if (level_of_quant tvar2.quant) > level then (
-          tvar2.quant <- Exists level
-        );
-        false
+     if ty.level < level then
+       false
+     else (
+       ty.level <- level;
+       match ty.node with
+       | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
+       | Nominal _ -> false
+       | Prim _ -> false
+       | Var { id; _ } when id = tvar.id -> true
+       | Var { ty = Some ty; _ } -> occurs tvar ty
+       | Var tvar2 ->
+          if (level_of_quant tvar2.quant) > level then (
+            tvar2.quant <- Exists level
+          );
+          false
+     )
 
 let of_node node =
   let level =
