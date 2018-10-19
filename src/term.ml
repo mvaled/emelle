@@ -1,8 +1,11 @@
 open Base
 
-type pattern = {node : pattern'; reg : int option}
+type pattern =
+  { node : pattern'
+  ; reg : int option}
 and pattern' =
   | Con of Type.adt * int * pattern list (** Constructor pattern *)
+  | Or of pattern * pattern
   | Wild (** Wildcard pattern *)
 
 type 'a t =

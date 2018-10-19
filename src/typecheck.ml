@@ -259,23 +259,62 @@ let inst_adt checker adt =
     (Type.of_node (Type.Nominal (checker.package.name, adt.Type.name)))
     adt.Type.typeparams
 
+(** [compare_polytypes equalities t1 t2] where [equalities] is a map from
+    universally quanitifed variables in [t1] to universally quantified variables
+    in [t2] *)
+let rec compare_polytys equalities t1 t2 =
+  let open Result.Monad_infix in
+  match t1.Type.node, t2.Type.node with
+  | Type.App(tcon1, targ1), Type.App(tcon2, targ2) ->
+     compare_polytys equalities tcon1 tcon2 >>= fun () ->
+     compare_polytys equalities targ1 targ2
+  | Type.Nominal n1, Nominal n2 when (Ident.compare n1 n2) = 0 ->
+     Ok ()
+  | Type.Prim p1, Type.Prim p2 when (Type.compare_prim p1 p2) = 0 -> Ok ()
+  | Type.Var tvar1, Type.Var tvar2 ->
+     begin match tvar1.Type.quant, tvar2.Type.quant with
+     | Univ, Exists _ | Exists _, Univ -> Error Sequence.empty
+     | Exists _, Exists _ ->
+        if tvar1.Type.id = tvar2.Type.id then
+          Ok ()
+        else
+          Error Sequence.empty
+     | Univ, Univ ->
+        let tvar3 =
+          Hashtbl.find_or_add equalities tvar1 ~default:(fun () -> tvar2)
+        in
+        if Type.Var.compare tvar3 tvar2 = 0 then
+          Ok ()
+        else
+          Error Sequence.empty
+     end
+  | _ -> Error Sequence.empty
+
 (** [infer_pattern checker polyty pat] associates [polyty] with [pat]'s register
     if it has any while unifying any type constraints that arise from [pat]. *)
 let rec infer_pattern checker polyty pat =
   let open Result.Monad_infix in
+  let type_binding pat =
+    match pat.Term.reg with
+    | None -> Ok ()
+    | Some reg ->
+       (* The binding could already exist because of a prior OR pattern
+          alternative *)
+       let polyty2 =
+         Hashtbl.find_or_add checker.env reg ~default:(fun () -> polyty)
+       in
+       if phys_equal polyty polyty2 then
+         Ok ()
+       else
+         let equalities = Hashtbl.create (module Type.Var) in
+         compare_polytys equalities polyty polyty2
+  in
   match pat.Term.node with
   | Term.Con(adt, idx, pats) ->
      let nom_ty = inst_adt checker adt in
      unify_types checker (inst checker polyty) nom_ty
+     >>= fun () -> type_binding pat
      >>= fun () ->
-     begin match pat.reg with
-     | None -> Ok ()
-     | Some reg ->
-        match Hashtbl.add checker.env ~key:reg ~data:polyty with
-        | `Ok -> Ok ()
-        | `Duplicate ->
-           Error (Sequence.return (Message.Unreachable "Tc pat con"))
-     end >>= fun () ->
      let (_, products) = adt.Type.constrs.(idx) in
      let rec f pats tys =
        match pats, tys with
@@ -285,14 +324,10 @@ let rec infer_pattern checker polyty pat =
           infer_pattern checker ty pat >>= fun () ->
           f pats tys
      in f pats products
-  | Term.Wild ->
-     match pat.reg with
-     | None -> Ok ()
-     | Some reg ->
-        match Hashtbl.add checker.env ~key:reg ~data:polyty with
-        | `Ok -> Ok ()
-        | `Duplicate ->
-           Error (Sequence.return (Message.Unreachable "Tc pat wild"))
+  | Term.Wild -> type_binding pat
+  | Term.Or(p1, p2) ->
+     infer_pattern checker polyty p1 >>= fun () ->
+     infer_pattern checker polyty p2
 
 (** [infer typechecker term] infers the type of [term], returning a result. *)
 let rec infer checker =
@@ -347,6 +382,7 @@ let rec infer checker =
          ( idx - 1
          , { Pattern.first_pattern = pat
            ; Pattern.rest_patterns = pats
+           ; Pattern.bindings = Map.empty (module Int)
            ; Pattern.action = idx }::matrix
          , consequent::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
@@ -354,7 +390,7 @@ let rec infer checker =
      Pattern.decision_tree_of_matrix
        (let (occurrences, _) =
           List.fold ~f:(fun (list, i) _ ->
-              ([i]::list, i + 1)
+              ((Pattern.Nil i)::list, i + 1)
             ) ~init:([], 0) (scrutinee::scrutinees)
         in occurrences)
        matrix >>| fun decision_tree ->

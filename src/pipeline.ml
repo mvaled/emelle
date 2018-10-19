@@ -58,10 +58,13 @@ let compile_item self env =
            pat
          >>= fun () ->
          let matrix = [
-             Pattern.{ first_pattern = pat; rest_patterns = []; action = () }
+             { Pattern.first_pattern = pat
+             ; bindings = Map.empty (module Int)
+             ; rest_patterns = []
+             ; action = () }
            ]
          in
-         Pattern.decision_tree_of_matrix [[0]] matrix >>| fun tree ->
+         Pattern.decision_tree_of_matrix [Pattern.Nil 0] matrix >>| fun tree ->
          (map, Package.Let(tree, lambda)::list)
        ) ~init:(Ok (Map.empty (module String), [])) bindings
      >>= fun (map, bindings) ->

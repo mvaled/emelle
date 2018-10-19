@@ -17,17 +17,18 @@ and instr =
   | Local_rec of instr list * instr
   | Switch of operand * (int * int) list * instr array * instr
 
-and proc =
-  { env : operand array (* The captured variables *)
-  ; arity : int
-  ; body : instr }
+and proc = {
+    env : operand array; (** The captured variables *)
+    arity : int; (** The number of parameters that the function accepts *)
+    body : instr;
+  }
 
-type t =
-  { ctx : (int, operand) Hashtbl.t
-      (* Map from registers to variables *)
-  ; free_vars : operand Queue.t (* Array of free variables *)
-  ; parent : t option
-  ; mutable frame_offset : int (* Current offset from frame pointer *) }
+type t = {
+    ctx : (int, operand) Hashtbl.t; (** Map from registers to variables *)
+    free_vars : operand Queue.t; (** Array of free variables *)
+    parent : t option;
+    mutable frame_offset : int; (** Current offset from frame pointer *)
+  }
 
 let fresh_bound_var self =
   let offset = self.frame_offset in

@@ -1,19 +1,31 @@
 open Base
 
-(** Like a list, an occurrence is either empty or an integer followed by an
-    occurence *)
-type occurrence = int list
-and occurrences = occurrence list
-and 'a decision_tree =
+(** In the paper Compiling Pattern Matching to Good Decision Trees, an
+    occurrence is either empty or an integer and an occurrence, but in
+    my code, the occurrence must have an index into the pattern match
+    stack at the base case. *)
+type occurrence =
+  | Nil of int
+  | Cons of int * occurrence
+
+type occurrences = occurrence list
+
+type 'a decision_tree =
   | Fail
-  | Leaf of 'a
+  | Leaf of (int, occurrence, Int.comparator_witness) Map.t * 'a
+    (** A leaf holds a mapping from registers to pattern match occurrences. *)
   | Switch of occurrence * (int, 'a decision_tree) Hashtbl.t * 'a decision_tree
+    (** A switch holds the scrutinee occurrence, a map from constructors to
+        decision trees, and a default decision tree. *)
   | Swap of int * 'a decision_tree
 
-type 'a row =
-  { first_pattern : Term.pattern
-  ; rest_patterns : Term.pattern list
-  ; action : 'a }
+type 'a row = {
+    first_pattern : Term.pattern;
+    rest_patterns : Term.pattern list;
+    bindings : (int, occurrence, Int.comparator_witness) Map.t;
+    (** [bindings] holds a map from registers to already-popped occurrences. *)
+    action : 'a
+  }
 
 (** Contract: All rows in the matrix have the same length *)
 type 'a matrix = 'a row list
@@ -48,29 +60,45 @@ let find_adt pats =
     | [] -> None
     | Term.{node = Con(adt, _, _); _}::_ -> Some (adt, i)
     | Term.{node = Wild; _ }::xs -> f (i + 1) xs
+    | Term.{node = Or(p1, p2); _}::_ ->
+       match f i (p1::pats) with
+       | Some x -> Some x
+       | None ->
+          match f i (p2::pats) with
+          | Some x -> Some x
+          | None -> None
   in f 0 pats
 
 (** Specialize operation as described in Compiling Pattern Matching to Good
     Decision Trees *)
-let specialize (constr : int) (count : int) (rows : 'a row list) : 'a matrix =
-  (* Anamorphism over lists, catamorphism over the natural numbers *)
-  let rec ana coacc next = function
-    | 0 -> coacc
-    | n -> next::(ana coacc next (n - 1)) in
-  let handle_nullary_constr rows row =
-    match row.rest_patterns with
-    | pat::pats ->
-       { row with first_pattern = pat; rest_patterns = pats }::rows
-    | [] -> rows
-  in
-  let helper rows row =
+let rec specialize constr count occurrence rows =
+  let helper row rows =
+    let bindings =
+      match row.first_pattern.reg with
+      | None -> row.bindings
+      | Some reg -> Map.set row.bindings ~key:reg ~data:occurrence
+    in
+    (* Anamorphism over lists, catamorphism over the natural numbers *)
+    let rec ana coacc next = function
+      | 0 -> coacc
+      | n -> next::(ana coacc next (n - 1)) in
+    let handle_nullary_constr rows row =
+      match row.rest_patterns with
+      | pat::pats ->
+         { row with
+           first_pattern = pat
+         ; rest_patterns = pats
+         ; bindings }::rows
+      | [] -> rows
+    in
     match row.first_pattern.node with
     | Term.Con(_, id, cpats) when id = constr ->
        begin match cpats with
        | cpat::cpats ->
           { row with
             first_pattern = cpat
-          ; rest_patterns = cpats@row.rest_patterns }::rows
+          ; rest_patterns = cpats@row.rest_patterns
+          ; bindings }::rows
        | [] -> handle_nullary_constr rows row
        end
     | Term.Con _ -> rows
@@ -80,16 +108,30 @@ let specialize (constr : int) (count : int) (rows : 'a row list) : 'a matrix =
            first_pattern = { node = Term.Wild; reg = None }
          ; rest_patterns =
              ana row.rest_patterns { node = Term.Wild; reg = None } (count - 1)
+         ; bindings
          }::rows
        else
          handle_nullary_constr rows row
-  in List.fold ~f:helper ~init:[] rows
+    | Term.Or(p1, p2) ->
+       let mat1 =
+         specialize constr count occurrence
+           [{ row with
+              first_pattern = p1
+            ; rest_patterns = row.rest_patterns
+            ; bindings }]
+       in
+       let mat2 =
+         specialize constr count occurrence
+           [{ row with
+              first_pattern = p2
+            ; rest_patterns = row.rest_patterns
+            ; bindings }]
+       in mat1@mat2@rows
+  in List.fold_right ~f:helper ~init:[] rows
 
 (** Construct the default matrix *)
-let default_matrix
-      (rows : 'a row list)
-    : 'a matrix =
-  let helper rows row =
+let rec default_matrix (rows : 'a row list) : 'a matrix =
+  let helper row rows =
     match row.rest_patterns with
     | [] -> rows
     | second_pat::pats ->
@@ -97,12 +139,36 @@ let default_matrix
        | Term.Con _ -> rows
        | Term.Wild ->
           ({ row with first_pattern = second_pat; rest_patterns = pats }::rows)
-  in List.fold ~f:helper ~init:[] rows
+       | Term.Or(p1, p2) ->
+          let mat1 =
+            default_matrix
+              [{ row with
+                 first_pattern = p1
+               ; rest_patterns = pats }]
+          in
+          let mat2 =
+            default_matrix
+              [{ row with
+                 first_pattern = p2
+               ; rest_patterns = pats }]
+          in mat1@mat2@rows
+  in List.fold_right ~f:helper ~init:[] rows
+
+let map_regs_to_occs occurrences row =
+  let rec helper map occurrences list =
+    match occurrences, list with
+    | [], [] -> Ok map
+    | [], _::_ | _::_, [] -> Error Sequence.empty
+    | occ::occs, pat::pats ->
+       match pat.Term.reg with
+       | None -> helper map occs pats
+       | Some reg -> helper (Map.set map ~key:reg ~data:occ) occs pats
+  in helper row.bindings occurrences (row.first_pattern::row.rest_patterns)
 
 (** Corresponds with swap_columns and swap_column_of_row (The occurrences vector
     is like another row) *)
 (* Maybe make function generic instead of repeating code? TODO consider later *)
-let swap_occurrences idx (occurrences : int list list) =
+let swap_occurrences idx (occurrences : occurrence list) =
   let rec f idx left = function
     | pivot::right when idx = 0 -> Some (left, pivot, right)
     | x::next -> f (idx - 1) (x::left) next
@@ -119,7 +185,10 @@ let rec decision_tree_of_matrix occurrences =
   | [] -> Ok Fail (* Case 1 *)
   | (row::rows') as rows ->
      match find_adt (row.first_pattern::row.rest_patterns) with
-     | None -> Ok (Leaf row.action) (* Case 2 *)
+     | None ->
+        (* Case 2 *)
+        map_regs_to_occs occurrences row >>| fun map ->
+        Leaf(map, row.action)
      | Some(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
@@ -128,21 +197,23 @@ let rec decision_tree_of_matrix occurrences =
         | None -> Error Sequence.empty
         | Some (first_occ, rest_occs) ->
            let (_, product) = alg.Type.constrs.(i) in
-           let rec f idx = function
-             | [] -> []
-             | _::xs -> (idx::first_occ)::(f (idx + 1) xs)
+           (* Just like how the matched value is popped off the stack and its
+              children pushed on the stack, pop off the selected occurrence and
+              push occurrences for its subterms *)
+           let rec push_occs rest idx = function
+             | [] -> rest
+             | _::xs -> (Cons(idx, first_occ))::(push_occs rest (idx + 1) xs)
            in
-           let pushed_occs = f 0 product in
-           let match_occs = List.append pushed_occs rest_occs in
+           let pushed_occs = push_occs rest_occs 0 product in
            match swap_column i rows' with
            | None -> Error Sequence.empty
            | Some rows ->
               Array.foldi ~f:(fun id acc (_, products) ->
                   acc >>= fun () ->
-                  match specialize id (List.length products) rows with
+                  match specialize id (List.length products) first_occ rows with
                   | [] -> Ok ()
                   | matrix ->
-                     match decision_tree_of_matrix match_occs matrix with
+                     match decision_tree_of_matrix pushed_occs matrix with
                      | Ok tree ->
                         Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
                         Ok ()
