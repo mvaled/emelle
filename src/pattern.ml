@@ -57,6 +57,12 @@ let specialize (constr : int) (count : int) (rows : 'a row list) : 'a matrix =
   let rec ana coacc next = function
     | 0 -> coacc
     | n -> next::(ana coacc next (n - 1)) in
+  let handle_nullary_constr rows row =
+    match row.rest_patterns with
+    | pat::pats ->
+       { row with first_pattern = pat; rest_patterns = pats }::rows
+    | [] -> rows
+  in
   let helper rows row =
     match row.first_pattern.node with
     | Term.Con(_, id, cpats) when id = constr ->
@@ -65,19 +71,18 @@ let specialize (constr : int) (count : int) (rows : 'a row list) : 'a matrix =
           { row with
             first_pattern = cpat
           ; rest_patterns = cpats@row.rest_patterns }::rows
-       | [] ->
-          match row.rest_patterns with
-          | pat::pats ->
-             { row with first_pattern = pat; rest_patterns = pats }::rows
-          | [] -> rows
+       | [] -> handle_nullary_constr rows row
        end
     | Term.Con _ -> rows
     | Term.Wild ->
-       { row with
-         first_pattern = { node = Term.Wild; reg = None }
-       ; rest_patterns =
-           ana row.rest_patterns { node = Term.Wild; reg = None } (count - 1)
-       }::rows
+       if count > 0 then
+         { row with
+           first_pattern = { node = Term.Wild; reg = None }
+         ; rest_patterns =
+             ana row.rest_patterns { node = Term.Wild; reg = None } (count - 1)
+         }::rows
+       else
+         handle_nullary_constr rows row
   in List.fold ~f:helper ~init:[] rows
 
 (** Construct the default matrix *)
