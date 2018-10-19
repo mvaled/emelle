@@ -1,15 +1,13 @@
 open Base
 
- (** Like a list, an occurrence is either empty or an integer followed by an
+(** Like a list, an occurrence is either empty or an integer followed by an
     occurence *)
 type occurrence = int list
 and occurrences = occurrence list
 and 'a decision_tree =
   | Fail
-  | Leaf of int option list * 'a
-  | Switch of
-      occurrence * int option * Type.adt
-      * (int, 'a decision_tree) Hashtbl.t * 'a decision_tree
+  | Leaf of 'a
+  | Switch of occurrence * (int, 'a decision_tree) Hashtbl.t * 'a decision_tree
   | Swap of int * 'a decision_tree
 
 type 'a row =
@@ -44,25 +42,17 @@ let swap_column idx =
         )
     ) ~init:(Some [])
 
-type find_adt_result =
-  | Some_constr of int option * Type.adt * int
-  | All_wilds of int option list
-
 let find_adt pats =
-  let rec f i regs pats =
+  let rec f i pats =
     match pats with
-    | [] -> All_wilds (List.rev regs)
-    | Term.{node = Con(adt, _, _); reg}::_ -> Some_constr(reg, adt, i)
-    | Term.{node = Wild; reg}::xs -> f (i + 1) (reg::regs) xs
-  in f 0 [] pats
+    | [] -> None
+    | Term.{node = Con(adt, _, _); _}::_ -> Some (adt, i)
+    | Term.{node = Wild; _ }::xs -> f (i + 1) xs
+  in f 0 pats
 
 (** Specialize operation as described in Compiling Pattern Matching to Good
     Decision Trees *)
-let specialize
-      (constr : int)
-      (count  : int)
-      (rows   : 'a row list)
-    : 'a matrix =
+let specialize (constr : int) (count : int) (rows : 'a row list) : 'a matrix =
   (* Anamorphism over lists, catamorphism over the natural numbers *)
   let rec ana coacc next = function
     | 0 -> coacc
@@ -70,12 +60,23 @@ let specialize
   let helper rows row =
     match row.first_pattern.node with
     | Term.Con(_, id, cpats) when id = constr ->
-       { row with rest_patterns = cpats@row.rest_patterns }::rows
+       begin match cpats with
+       | cpat::cpats ->
+          { row with
+            first_pattern = cpat
+          ; rest_patterns = cpats@row.rest_patterns }::rows
+       | [] ->
+          match row.rest_patterns with
+          | pat::pats ->
+             { row with first_pattern = pat; rest_patterns = pats }::rows
+          | [] -> rows
+       end
     | Term.Con _ -> rows
     | Term.Wild ->
        { row with
-         rest_patterns =
-           ana row.rest_patterns {node = Term.Wild; reg = None} count
+         first_pattern = { node = Term.Wild; reg = None }
+       ; rest_patterns =
+           ana row.rest_patterns { node = Term.Wild; reg = None } (count - 1)
        }::rows
   in List.fold ~f:helper ~init:[] rows
 
@@ -103,8 +104,7 @@ let swap_occurrences idx (occurrences : int list list) =
     | [] -> None
   in
   match f idx [] occurrences with
-  | Some (left, pivot, right) ->
-     Some (pivot, List.rev_append left right)
+  | Some (left, pivot, right) -> Some (pivot, List.rev_append left right)
   | None -> None
 
 (** Compilation scheme CC *)
@@ -114,15 +114,15 @@ let rec decision_tree_of_matrix occurrences =
   | [] -> Ok Fail (* Case 1 *)
   | (row::rows') as rows ->
      match find_adt (row.first_pattern::row.rest_patterns) with
-     | All_wilds reg_opts -> Ok (Leaf(reg_opts, row.action)) (* Case 2 *)
-     | Some_constr (reg, alg, i) ->
+     | None -> Ok (Leaf row.action) (* Case 2 *)
+     | Some(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
         let default = default_matrix rows in
         match swap_occurrences i occurrences with
         | None -> Error Sequence.empty
         | Some (first_occ, rest_occs) ->
-           let (_, product) = alg.constrs.(i) in
+           let (_, product) = alg.Type.constrs.(i) in
            let rec f idx = function
              | [] -> []
              | _::xs -> (idx::first_occ)::(f (idx + 1) xs)
@@ -145,6 +145,5 @@ let rec decision_tree_of_matrix occurrences =
                 ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
               decision_tree_of_matrix rest_occs default
               >>| fun default_tree ->
-              let switch =
-                Switch(first_occ, reg, alg, jump_tbl, default_tree)
-              in if i = 0 then switch else Swap(i, switch)
+              let switch = Switch(first_occ, jump_tbl, default_tree) in
+              if i = 0 then switch else Swap(i, switch)
