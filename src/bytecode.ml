@@ -4,18 +4,28 @@
 
 open Base
 
-type operand =
-  | Bound_var of int
+type occurrence = operand * int list
+
+and decision_tree =
+  | Fail
+  | Leaf of occurrence list * int
+  | Switch of occurrence * (int * decision_tree) list * decision_tree
+
+and operand =
+  | Bound_var of int (* On the stack frame *)
   | Extern_var of Ident.t
-  | Free_var of int
+  | Free_var of int (* In the proc's environment *)
 
 and instr =
   | Call of operand * operand * operand array
+    (* proc, first arg, rest args *)
+  | Case of operand * operand list * decision_tree * instr array
+    (* first discr, rest discrs, decision tree, jump table *)
   | Fun of proc
   | Load of operand
   | Local of instr * instr
   | Local_rec of instr list * instr
-  | Switch of operand * (int * int) list * instr array * instr
+  | Match_stack
 
 and proc = {
     env : operand array; (** The captured variables *)
@@ -55,6 +65,35 @@ let rec free_var self reg =
          Error (Sequence.return (Message.Unreachable "Bytecode free_var"))
     )
 
+(** Reverse the occurrence from the pattern match compilation into a addressing
+    path. *)
+let convert_occurrence scruts =
+  (* The structure of this function is similar to left fold. *)
+  let rec helper acc = function
+    | Pattern.Cons(idx, occurrence) -> helper (idx::acc) occurrence
+    | Pattern.Nil idx -> (scruts.(idx), acc)
+  in helper []
+
+let rec convert_decision_tree self scruts = function
+  | Pattern.Fail -> Fail
+  | Pattern.Leaf(bindings, jump) ->
+     let bound_occs =
+       Map.fold ~f:(fun ~key:_ ~data:occ acc ->
+           (convert_occurrence scruts occ)::acc
+         ) ~init:[] bindings
+     in Leaf(bound_occs, jump)
+  | Pattern.Switch(occ, subtrees, default) ->
+     let occ = convert_occurrence scruts occ in
+     let subtrees =
+       Hashtbl.fold ~f:(fun ~key:constr ~data:tree acc ->
+           (constr, convert_decision_tree self scruts tree)::acc
+         ) ~init:[] subtrees
+     in
+     let default = convert_decision_tree self scruts default in
+     Switch(occ, subtrees, default)
+  | Pattern.Swap(_, tree) -> convert_decision_tree self scruts tree
+
+
 (** Combine statically known nested unary functions into multi-argument procs *)
 let rec proc_of_lambda self reg body =
   let open Result.Monad_infix in
@@ -70,19 +109,53 @@ let rec proc_of_lambda self reg body =
         instr_of_lambdacode self body >>| fun body ->
         { env = Queue.to_array self.free_vars; arity; body }
 
-and flatten_app self args f x =
+(** Combine curried one-argument applications into a function call with all the
+    arguments. *)
+and flatten_app self (args : operand list) (f : Lambda.t) (x : operand) =
   match f.Lambda.expr with
   | Lambda.App(f, x') ->
      operand_of_lambdacode self x' (fun x' -> flatten_app self (x::args) f x')
   | _ ->
      operand_of_lambdacode self f (fun f -> Ok (Call(f, x, Array.of_list args)))
 
+(** Convert a [Lambda.t] into an [instr]. *)
 and instr_of_lambdacode self lambda =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with
   | Lambda.App(f, x) ->
      operand_of_lambdacode self x (fun x -> flatten_app self [] f x)
-  | Lambda.Case(_, _, _, _) -> failwith ""
+  | Lambda.Case(scrut, scruts, tree, branches) ->
+     operand_of_lambdacode self scrut (fun scrut ->
+         let rec f list = function
+           | scrut::scruts ->
+              operand_of_lambdacode self scrut (fun operand ->
+                  f (operand::list) scruts
+                )
+           | [] ->
+              let scruts = List.rev list in
+              List.fold_right ~f:(fun (regs, lambda) acc ->
+                  acc >>= fun list ->
+                  (* Leave space for the variables from the pattern match *)
+                  self.frame_offset <- self.frame_offset + Set.length regs;
+                  instr_of_lambdacode self lambda >>= fun instr ->
+                  (* The first reg is the *innermost* one *)
+                  Set.fold ~f:(fun acc reg ->
+                      acc >>= fun body ->
+                      self.frame_offset <- self.frame_offset - 1;
+                      let var = Bound_var self.frame_offset in
+                      match Hashtbl.add self.ctx ~key:reg ~data:var with
+                      | `Duplicate ->
+                         Error (Sequence.return
+                                  (Message.Unreachable "bytecode case"))
+                      | `Ok -> Ok (Local(Match_stack, body))
+                    ) ~init:(Ok instr) regs >>| fun instr -> instr::list
+                ) ~init:(Ok []) branches
+              >>| fun branches ->
+              let scruts_arr = Array.of_list (scrut::scruts) in
+              let tree = convert_decision_tree self scruts_arr tree in
+              Case(scrut, scruts, tree, Array.of_list branches)
+         in f [] scruts
+       )
   | Lambda.Extern_var _ | Lambda.Local_var _ ->
      operand_of_lambdacode self lambda (fun operand -> Ok (Load operand))
   | Lambda.Lam(reg, body) ->
@@ -123,6 +196,9 @@ and instr_of_lambdacode self lambda =
      instr_of_lambdacode self body >>| fun body ->
      Local_rec(instrs, body)
 
+(** [operand_of_lambdacode self lambda cont] converts [lambda] into an
+    [operand], passes it to the continuation [cont], and returns an [instr].
+ *)
 and operand_of_lambdacode self lambda cont =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with
