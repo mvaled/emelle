@@ -9,23 +9,17 @@ type ty_state =
   | Compiled of Type.decl
   | Todo of Kind.t
 
-type command =
-  | Let of unit Pattern.decision_tree * Lambda.t
-  | Let_rec of (int * Lambda.t) list
-
 type t =
   { name : string
   ; typedefs : (string, ty_state ref) Hashtbl.t
   ; constrs : (string, Type.adt * int) Hashtbl.t
-  ; vals : (string, Type.t * int) Hashtbl.t
-  ; commands : command Queue.t }
+  ; vals : (string, Type.t * int) Hashtbl.t }
 
 let create name =
   { name
   ; typedefs = Hashtbl.create (module String)
   ; constrs = Hashtbl.create (module String)
-  ; vals = Hashtbl.create (module String)
-  ; commands = Queue.create () }
+  ; vals = Hashtbl.create (module String) }
 
 let find f self name = Hashtbl.find (f self) name
 
@@ -63,6 +57,3 @@ let add_val self name ty reg =
   match Hashtbl.add self.vals ~key:name ~data:(ty, reg) with
   | `Ok -> Some ()
   | `Duplicate -> None
-
-let add_command self command =
-  Queue.enqueue self.commands command

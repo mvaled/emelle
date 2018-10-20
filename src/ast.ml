@@ -38,7 +38,7 @@ type 'a adt =
 
 type 'a item =
   | Adt of 'a adt
-  | Let of ('a pattern * 'a expr) list
+  | Let of ('a pattern * 'a expr) * ('a pattern * 'a expr) list
   | Let_rec of (string * 'a expr) list
 
 type 'a file =

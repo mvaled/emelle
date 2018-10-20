@@ -58,7 +58,7 @@ package:
     }
 
 item:
-  | LET separated_nonempty_list(AND, binding) { Ast.Let $2 }
+  | LET binding list(AND binding { $2 }) { Ast.Let($2, $3) }
   | LET REC separated_nonempty_list(AND, rec_binding) { Ast.Let_rec $3 }
   | TYPE adt { Ast.Adt $2 }
   ;

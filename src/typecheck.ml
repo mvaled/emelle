@@ -18,11 +18,10 @@ let create package packages =
   ; kvargen = Kind.create_vargen () }
 
 let fresh_tvar (checker : t) =
-  Type.{ level = checker.level
-       ; node =
-           Type.Var
-             (Type.fresh_var
-                checker.tvargen (Type.Exists checker.level) Kind.Mono) }
+  { Type.level = checker.level
+  ; node =
+      Type.Var
+        (Type.fresh_var checker.tvargen (Type.Exists checker.level) Kind.Mono) }
 
 let find f st (pack_name, item_name) =
   match Hashtbl.find st.packages pack_name with
@@ -312,9 +311,8 @@ let rec infer_pattern checker polyty pat =
   match pat.Term.node with
   | Term.Con(adt, idx, pats) ->
      let nom_ty = inst_adt checker adt in
-     unify_types checker (inst checker polyty) nom_ty
-     >>= fun () -> type_binding pat
-     >>= fun () ->
+     unify_types checker (inst checker polyty) nom_ty >>= fun () ->
+     type_binding pat >>= fun () ->
      let (_, products) = adt.Type.constrs.(idx) in
      let rec f pats tys =
        match pats, tys with
