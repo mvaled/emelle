@@ -81,8 +81,14 @@ let rec term_of_expr st env (ann, node) =
            term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
            Env.in_scope_with (fun env ->
                term_of_expr st env expr
-             ) map env >>| fun body ->
-           (pat, [], body)::cases
+             ) map env
+           >>| fun body ->
+           let regs =
+             Map.fold ~f:(fun ~key:_ ~data:reg acc ->
+                 Set.add acc reg
+               ) ~init:(Set.empty (module Int)) map
+           in
+           (pat, [], regs, body)::cases
          ) ~init:(Ok []) cases >>| fun cases ->
        Term.Case(scrutinee, [], cases)
 
@@ -100,7 +106,11 @@ let rec term_of_expr st env (ann, node) =
          Env.in_scope_with (fun env ->
              term_of_expr st env expr
            ) map env >>| fun term ->
-         (pat, pats, term)
+         let regs =
+           Map.fold ~f:(fun ~key:_ ~data:reg acc ->
+               Set.add acc reg
+             ) ~init:(Set.empty (module Int)) map
+         in (pat, pats, regs, term)
        in
        List.fold_right ~f:(fun branch acc ->
            acc >>= fun rows ->
@@ -114,15 +124,42 @@ let rec term_of_expr st env (ann, node) =
            Term.Lam(reg, body)
          ) ~init:case_term (reg::regs)
 
-    | Ast.Let(bindings, body) ->
-       let rec f map = function
-         | [] -> Env.in_scope_with (fun env -> term_of_expr st env body) map env
-         | (pat, def)::bindings ->
-            term_of_expr st env def >>= fun def ->
-            term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
-            f map bindings >>| fun cont ->
-            Term.Case(def, [], [(pat, [], cont)])
-       in f (Map.empty (module String)) bindings
+    | Ast.Let((pat, def), bindings, body) ->
+       (* Transform
+
+              let p1 = e1
+              and p2 = e2
+              ... pN = eN
+              in body
+
+          into
+
+              case e1, e2, ... eN with
+              | p1, p2, ... pN -> body
+
+          What should the semantics be regarding diverging RHS expressions and
+          refutable patterns? One would expect the let bindings' RHS to
+          evaluate and match with its LHS pattern from top to bottom, but with
+          the case desugar, all of the RHS expressions evaluate before any of
+          them match with the LHS pattern. Is this desugar sensible? *)
+       term_of_expr st env def >>= fun def ->
+       term_pattern_of_ast_pattern st (Map.empty (module String)) None pat
+       >>= fun (pat, map) ->
+       List.fold_right ~f:(fun (pat, def) acc ->
+           acc >>= fun (map, discrs, pats) ->
+           term_of_expr st env def >>= fun def ->
+           term_pattern_of_ast_pattern st map None pat
+           >>| fun (pat, map) ->
+           (map, def::discrs, pat::pats)
+         ) ~init:(Ok (map, [], [])) bindings
+       >>= fun (map, discrs, pats) ->
+       Env.in_scope_with (fun env -> term_of_expr st env body) map env
+       >>| fun body ->
+       let regs =
+         Map.fold ~f:(fun ~key:_ ~data:reg acc ->
+             Set.add acc reg
+           ) ~init:(Set.empty (module Int)) map
+       in Term.Case(def, discrs, [pat, pats, regs, body])
 
     | Ast.Let_rec(bindings, body) ->
        let bindings =

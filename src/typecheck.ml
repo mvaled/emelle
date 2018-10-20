@@ -184,10 +184,10 @@ let type_adt_of_ast_adt checker adt =
     ) ~init:(Ok ([], 0)) adt.Ast.constrs
   >>| fun (constrs, _) ->
   let constrs = Array.of_list constrs in
-  Type.{ name = adt.Ast.name
-       ; typeparams = tvar_list
-       ; constr_names = constr_map
-       ; constrs }
+  { Type.name = adt.Ast.name
+  ; typeparams = tvar_list
+  ; constr_names = constr_map
+  ; constrs }
 
 let in_new_level f st =
   st.level <- st.level + 1;
@@ -369,7 +369,7 @@ let rec infer checker =
           >>= fun () ->
           f scruts pats
      in
-     List.fold_right ~f:(fun (pat, pats, consequent) acc ->
+     List.fold_right ~f:(fun (pat, pats, regs, consequent) acc ->
          acc >>= fun (idx, matrix, branches) ->
          in_new_level (fun _ ->
              infer_pattern checker (gen checker scrut.Lambda.ty) pat
@@ -384,7 +384,7 @@ let rec infer checker =
            ; Pattern.rest_patterns = pats
            ; Pattern.bindings = Map.empty (module Int)
            ; Pattern.action = idx }::matrix
-         , consequent::branches )
+         , (regs, consequent)::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
      >>= fun (_, matrix, branches) ->
      Pattern.decision_tree_of_matrix

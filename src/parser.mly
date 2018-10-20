@@ -104,8 +104,8 @@ expr_kw:
   | FUN option(BAR) lambda_case list(BAR lambda_case { $2 }) {
         (($symbolstartpos, $endpos), Ast.Lam($3, $4))
       }
-  | LET bindings = separated_list(AND, binding) IN body = expr {
-        (($symbolstartpos, $endpos), Ast.Let(bindings, body))
+  | LET binding = binding bindings = list(AND binding { $2 }) IN body = expr {
+        (($symbolstartpos, $endpos), Ast.Let(binding, bindings, body))
       }
   | LET REC bindings = separated_list(AND, rec_binding) IN body = expr {
         (($symbolstartpos, $endpos), Ast.Let_rec(bindings, body))
