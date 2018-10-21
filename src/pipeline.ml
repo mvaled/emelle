@@ -62,8 +62,7 @@ let export self env exports =
 
 let compile_items self env items exports =
   let open Result.Monad_infix in
-  let commands = Queue.create () in
-  let rec loop env = function
+  let rec loop commands env = function
     | (Ast.Adt adt)::rest ->
        Typecheck.type_adt_of_ast_adt self.typechecker adt >>= fun adt ->
        begin match Package.find_typedef self.package adt.Type.name with
@@ -76,7 +75,7 @@ let compile_items self env items exports =
              Typecheck.unify_kinds kind (Type.kind_of_adt adt) >>= fun () ->
              Package.add_constrs self.package adt >>= fun () ->
              ptr := Package.Compiled (Type.Manifest adt);
-             loop env rest
+             loop commands env rest
        end
 
     | (Ast.Let((pat, scrut), bindings))::rest ->
@@ -125,8 +124,7 @@ let compile_items self env items exports =
              Set.add acc reg
            ) ~init:(Set.empty (module Register)) map
        in
-       Queue.enqueue commands (Let(scrut, scruts, decision_tree, regs));
-       loop env rest
+       loop ((Let(scrut, scruts, decision_tree, regs))::commands) env rest
 
     | (Ast.Let_rec bindings)::rest ->
        (* The two List.fold(_left)s cancel out the list reversal *)
@@ -157,8 +155,7 @@ let compile_items self env items exports =
                | None -> None
              )
          ) bindings;
-       Queue.enqueue commands (Let_rec bindings);
-       loop env rest
+       loop ((Let_rec bindings)::commands) env rest
 
     | [] ->
        let rec f = function
@@ -170,9 +167,9 @@ let compile_items self env items exports =
               (fun _ -> f rest)
          | [] ->
             export self env exports
-       in f (Queue.to_list commands)
+       in f (List.rev commands)
 
-  in loop env items
+  in loop [] env items
 
 let compile packages name ast_package =
   let open Result.Monad_infix in
