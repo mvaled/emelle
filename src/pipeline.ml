@@ -36,22 +36,29 @@ let precompile self =
       | _ -> Ok ()
     ) ~init:(Ok ())
 
-let export self env =
+let export self env exports =
   let open Result.Monad_infix in
   List.fold ~f:(fun acc name ->
-      acc >>= fun () ->
+      acc >>= fun (i, list) ->
       match Env.find env name with
       | None ->
          Error (Sequence.return (Message.Unresolved_path (Ast.Internal name)))
-      | Some idx ->
-         match Hashtbl.find self.typechecker.Typecheck.env idx with
+      | Some reg ->
+         match Hashtbl.find self.typechecker.Typecheck.env reg with
          | None ->
-            Error (Sequence.return (Message.Unreachable "Pipeline export"))
+            Error (Sequence.return (Message.Unreachable "Pipeline export 1"))
          | Some ty ->
-            match Package.add_val self.package name ty idx with
-            | Some () -> Ok ()
-            | None -> Error (Sequence.return (Message.Reexported_name name))
-    ) ~init:(Ok ())
+            match Hashtbl.find self.bytecomp.Bytecode.ctx reg with
+            | None ->
+               Error
+                 (Sequence.return (Message.Unreachable "Pipeline export 2"))
+            | Some operand ->
+               match Package.add_val self.package name ty i with
+               | Some () -> Ok (i + 1, operand::list)
+               | None -> Error (Sequence.return (Message.Reexported_name name))
+    ) ~init:(Ok (0, [])) exports
+  >>| fun (_, operands) ->
+  Bytecode.Box (List.rev operands)
 
 let compile_items self env items exports =
   let open Result.Monad_infix in
@@ -163,7 +170,6 @@ let compile_items self env items exports =
               (fun _ -> f rest)
          | [] ->
             export self env exports
-            >>= fun () -> Ok (Bytecode.Box [])
        in f (Queue.to_list commands)
 
   in loop env items

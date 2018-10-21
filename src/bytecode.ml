@@ -26,7 +26,7 @@ and instr =
   | Load of operand
   | Local of instr * instr
   | Local_rec of instr list * instr
-  | Match_stack
+  | Pop_match
 
 and proc = {
     env : operand array; (** The captured variables *)
@@ -86,7 +86,7 @@ let rec convert_decision_tree self scruts = function
   | Pattern.Fail -> Fail
   | Pattern.Leaf(bindings, jump) ->
      let bound_occs =
-       Map.fold ~f:(fun ~key:_ ~data:occ acc ->
+       Map.fold_right ~f:(fun ~key:_ ~data:occ acc ->
            (convert_occurrence scruts occ)::acc
          ) ~init:[] bindings
      in Leaf(bound_occs, jump)
@@ -149,8 +149,7 @@ and compile_case
            let scruts = List.rev list in
            List.fold_right ~f:(fun (regs_set, action) acc ->
                acc >>= fun list ->
-               (* The first reg is the *last* one in the list *)
-               Set.fold ~f:(fun acc reg ->
+               Set.fold_right ~f:(fun reg acc ->
                    acc >>= fun list ->
                    self.frame_offset <- self.frame_offset + 1;
                    let var = Bound_var self.frame_offset in
@@ -164,7 +163,7 @@ and compile_case
                let rec loop = function
                  | [] -> f action
                  | _::regs ->
-                    loop regs >>| fun body -> Local(Match_stack, body)
+                    loop regs >>| fun body -> Local(Pop_match, body)
                in
                loop regs_list
                >>| fun instr ->
@@ -237,8 +236,7 @@ and compile_letrec self bindings f =
   Local_rec(instrs, body)
 
 (** [operand_of_lambdacode self lambda cont] converts [lambda] into an
-    [operand], passes it to the continuation [cont], and returns an [instr].
- *)
+    [operand], passes it to the continuation [cont], and returns an [instr]. *)
 and operand_of_lambdacode self lambda cont =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with

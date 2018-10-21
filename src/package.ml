@@ -13,7 +13,7 @@ type t =
   { name : string
   ; typedefs : (string, ty_state ref) Hashtbl.t
   ; constrs : (string, Type.adt * int) Hashtbl.t
-  ; vals : (string, Type.t * Register.t) Hashtbl.t }
+  ; vals : (string, Type.t * int) Hashtbl.t }
 
 let create name =
   { name
