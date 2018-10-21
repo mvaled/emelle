@@ -54,7 +54,20 @@ rule expr = parse
     }
   | integer { INT_LIT (Int.of_string (Lexing.lexeme lexbuf)) }
   | decimal { FLOAT_LIT (Float.of_string (Lexing.lexeme lexbuf)) }
+  | '\"' { STRING_LIT (lex_string (Buffer.create 10) lexbuf) }
   | eof { EOF }
+  | _ { raise (Error (Lexing.lexeme lexbuf)) }
+
+and lex_string buffer = parse
+  | '\"' { Buffer.contents buffer }
+  | "\\\"" { Buffer.add_char buffer '\"'; lex_string buffer lexbuf }
+  | "\\\'" { Buffer.add_char buffer '\''; lex_string buffer lexbuf }
+  | "\\\\" { Buffer.add_char buffer '\\'; lex_string buffer lexbuf }
+  | "\\n" { Buffer.add_char buffer '\n'; lex_string buffer lexbuf }
+  | "\\t" { Buffer.add_char buffer '\t'; lex_string buffer lexbuf }
+  | [^ '\"' '\\' '\n' '\t']+ {
+      Buffer.add_string buffer (Lexing.lexeme lexbuf); lex_string buffer lexbuf
+    }
   | _ { raise (Error (Lexing.lexeme lexbuf)) }
 
 {

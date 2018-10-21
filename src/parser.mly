@@ -30,6 +30,7 @@
 %token <string> UIDENT LIDENT
 %token <float> FLOAT_LIT
 %token <int> INT_LIT
+%token <string> STRING_LIT
 
 %token EOF
 
@@ -140,6 +141,7 @@ expr_atom:
   | qual_lid { (($symbolstartpos, $endpos), Ast.Var $1) }
   | FLOAT_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.Float $1)) }
   | INT_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.Int $1)) }
+  | STRING_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.String $1)) }
   | LPARENS expr RPARENS { $2 }
   ;
 

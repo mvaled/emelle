@@ -50,7 +50,13 @@ let tests =
   ; "let two = fun _ -> +2 in two 6", End
   ; "let two = fun _ -> +2.0 in two 4", End
   ; "let minus_five = fun _ -> -5 in minus_five 0", End
-  ; "(fun x -> x) 0", End ]
+  ; "(fun x -> x) 0", End
+  ; "\"\\\\\"", End
+  ; "\"\\\"\"", End
+  ; "\"\\\'\"", End
+  ; "\"foobar\\\"baz\"", End
+  ; "\"Hello world!\\n\"", End
+  ; "\"\"", End ]
 
 let test_phase f curr_phase input format phase =
   let result = f format in
