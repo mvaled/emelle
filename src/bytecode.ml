@@ -12,16 +12,17 @@ and decision_tree =
   | Switch of occurrence * (int * decision_tree) list * decision_tree
 
 and operand =
-  | Bound_var of int (* On the stack frame *)
+  | Bound_var of int (** On the stack frame *)
   | Extern_var of Ident.t
-  | Free_var of int (* In the proc's environment *)
+  | Free_var of int (** In the proc's environment *)
+  | Lit of Literal.t
 
 and instr =
   | Box of operand list
   | Call of operand * operand * operand array
-    (* proc, first arg, rest args *)
+    (** proc, first arg, rest args *)
   | Case of operand * operand list * decision_tree * instr array
-    (* first discr, rest discrs, decision tree, jump table *)
+    (** first discr, rest discrs, decision tree, jump table *)
   | Fun of proc
   | Load of operand
   | Local of instr * instr
@@ -191,7 +192,7 @@ and instr_of_lambdacode self lambda =
      compile_case self scrut scruts tree branches (fun lambda ->
          instr_of_lambdacode self lambda
        )
-  | Lambda.Extern_var _ | Lambda.Local_var _ ->
+  | Lambda.Extern_var _ | Lambda.Local_var _ | Lambda.Lit _ ->
      operand_of_lambdacode self lambda ~cont:(fun operand -> Ok (Load operand))
   | Lambda.Lam(reg, body) ->
      let st =
@@ -245,6 +246,7 @@ and operand_of_lambdacode self lambda ~cont =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with
   | Lambda.Extern_var id -> cont (Extern_var id)
+  | Lambda.Lit lit -> cont (Lit lit)
   | Lambda.Local_var reg ->
      free_var self reg >>= fun var -> cont var
   | _ ->

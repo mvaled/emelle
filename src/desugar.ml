@@ -184,6 +184,8 @@ let rec term_of_expr st env (ann, node) =
            Term.Let_rec(bindings, body)
          ) env
 
+    | Ast.Lit lit -> Ok (Term.Lit lit)
+
     | Ast.Var qual_id ->
        match qual_id with
        | Ast.Internal name -> (* Unqualified name *)

@@ -16,6 +16,7 @@ type 'a t =
   | Lam of Register.t * 'a t
   | Let of Register.t * 'a t * 'a t
   | Let_rec of 'a bind_group * 'a t
+  | Lit of Literal.t
   | Var of Register.t
 
 and 'a bind_group = (Register.t * 'a t) list

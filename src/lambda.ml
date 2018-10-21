@@ -9,6 +9,7 @@ and expr =
   | Lam of Register.t * t
   | Let_rec of (Register.t * t) list * t
   | Let of Register.t * t * t
+  | Lit of Literal.t
   | Local_var of Register.t
 
 and branch = (Register.t, Register.comparator_witness) Set.t * t

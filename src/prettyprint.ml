@@ -41,10 +41,14 @@ let rec print_type pp parent_prec ty =
      print_ident pp id
   | Type.Prim Type.Arrow ->
      Buffer.add_string pp.buffer "(->)"
+  | Type.Prim Type.Char ->
+     Buffer.add_string pp.buffer "Char"
   | Type.Prim Type.Int ->
      Buffer.add_string pp.buffer "Int"
   | Type.Prim Type.Float ->
      Buffer.add_string pp.buffer "Float"
+  | Type.Prim Type.String ->
+     Buffer.add_string pp.buffer "String"
   | Type.Var { ty = Some ty; _ } ->
      print_type pp parent_prec ty
   | Type.Var { id; quant; _ } ->

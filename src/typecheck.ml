@@ -67,8 +67,10 @@ let rec kind_of_type checker ty =
      end
   | Type.Prim Type.Arrow ->
      Ok (Kind.Poly(Kind.Mono, Kind.Poly(Kind.Mono, Kind.Mono)))
+  | Type.Prim Type.Char -> Ok Kind.Mono
   | Type.Prim Type.Float -> Ok Kind.Mono
   | Type.Prim Type.Int -> Ok Kind.Mono
+  | Type.Prim Type.String -> Ok Kind.Mono
   | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
   | Type.Var { ty = None; kind; _ } -> Ok kind
 
@@ -440,6 +442,16 @@ let rec infer checker =
        ) bindings;
      infer checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
+
+  | Term.Lit lit ->
+     Ok { Lambda.ty =
+            begin match lit with
+            | Literal.Char _ -> Type.of_node (Type.Prim Type.Char)
+            | Literal.Float _ -> Type.of_node (Type.Prim Type.Float)
+            | Literal.Int _ -> Type.of_node (Type.Prim Type.Int)
+            | Literal.String _ -> Type.of_node (Type.Prim Type.String)
+            end
+        ; expr = Lambda.Lit lit }
 
   | Term.Var reg ->
      match Hashtbl.find checker.env reg with

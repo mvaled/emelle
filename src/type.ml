@@ -2,8 +2,10 @@ open Base
 
 type prim =
   | Arrow
-  | Int
+  | Char
   | Float
+  | Int
+  | String
 [@@deriving compare, sexp]
 
 (** Type [quant] describes whether a type variable is existentially quantified

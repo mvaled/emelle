@@ -28,6 +28,7 @@ and 'a expr' =
   | Lam of 'a lambda_case * 'a lambda_case list
   | Let of ('a pattern * 'a expr) * ('a pattern * 'a expr) list * 'a expr
   | Let_rec of (string * 'a expr) list * 'a expr
+  | Lit of Literal.t
   | Var of qual_id
 and 'a lambda_case = 'a pattern * 'a pattern list * 'a expr
 
