@@ -121,9 +121,13 @@ let rec proc_of_lambda self reg body =
 and flatten_app self (args : operand list) (f : Lambda.t) (x : operand) =
   match f.Lambda.expr with
   | Lambda.App(f, x') ->
-     operand_of_lambdacode self x' (fun x' -> flatten_app self (x::args) f x')
+     operand_of_lambdacode self x' ~cont:(fun x' ->
+         flatten_app self (x::args) f x'
+       )
   | _ ->
-     operand_of_lambdacode self f (fun f -> Ok (Call(f, x, Array.of_list args)))
+     operand_of_lambdacode self f ~cont:(fun f ->
+         Ok (Call(f, x, Array.of_list args))
+       )
 
 (** This function implements the compilation of a case expression, as used in
     [instr_of_lambdacode]. It is a separate function and takes a function
@@ -139,10 +143,10 @@ and compile_case
       -> (instr, Message.error Sequence.t) Result.t
   = fun self scrut scruts tree branches f ->
   let open Result.Monad_infix in
-  operand_of_lambdacode self scrut (fun scrut ->
+  operand_of_lambdacode self scrut ~cont:(fun scrut ->
       let rec loop list = function
         | scrut::scruts ->
-           operand_of_lambdacode self scrut (fun operand ->
+           operand_of_lambdacode self scrut ~cont:(fun operand ->
                loop (operand::list) scruts
              )
         | [] ->
@@ -182,13 +186,13 @@ and instr_of_lambdacode self lambda =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with
   | Lambda.App(f, x) ->
-     operand_of_lambdacode self x (fun x -> flatten_app self [] f x)
+     operand_of_lambdacode self x ~cont:(fun x -> flatten_app self [] f x)
   | Lambda.Case(scrut, scruts, tree, branches) ->
      compile_case self scrut scruts tree branches (fun lambda ->
          instr_of_lambdacode self lambda
        )
   | Lambda.Extern_var _ | Lambda.Local_var _ ->
-     operand_of_lambdacode self lambda (fun operand -> Ok (Load operand))
+     operand_of_lambdacode self lambda ~cont:(fun operand -> Ok (Load operand))
   | Lambda.Lam(reg, body) ->
      let st =
        { ctx = Hashtbl.create (module Register)
@@ -237,7 +241,7 @@ and compile_letrec self bindings f =
 
 (** [operand_of_lambdacode self lambda cont] converts [lambda] into an
     [operand], passes it to the continuation [cont], and returns an [instr]. *)
-and operand_of_lambdacode self lambda cont =
+and operand_of_lambdacode self lambda ~cont =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with
   | Lambda.Extern_var id -> cont (Extern_var id)
