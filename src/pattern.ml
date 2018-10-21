@@ -12,7 +12,7 @@ type occurrences = occurrence list
 
 type 'a decision_tree =
   | Fail
-  | Leaf of (int, occurrence, Int.comparator_witness) Map.t * 'a
+  | Leaf of (Register.t, occurrence, Register.comparator_witness) Map.t * 'a
     (** A leaf holds a mapping from registers to pattern match occurrences. *)
   | Switch of occurrence * (int, 'a decision_tree) Hashtbl.t * 'a decision_tree
     (** A switch holds the scrutinee occurrence, a map from constructors to
@@ -22,7 +22,7 @@ type 'a decision_tree =
 type 'a row = {
     first_pattern : Term.pattern;
     rest_patterns : Term.pattern list;
-    bindings : (int, occurrence, Int.comparator_witness) Map.t;
+    bindings : (Register.t, occurrence, Register.comparator_witness) Map.t;
     (** [bindings] holds a map from registers to already-popped occurrences. *)
     action : 'a
   }

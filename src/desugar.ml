@@ -1,13 +1,13 @@
 open Base
 
 type t =
-  { mutable vargen : int
+  { vargen : Register.gen
   ; packages : (string, Package.t) Hashtbl.t
   ; package : Package.t }
 
 (** Create a fresh desugarer state *)
 let create package packages =
-  { vargen = 0
+  { vargen = Register.create_gen ()
   ; package
   ; packages }
 
@@ -25,9 +25,7 @@ let find f st = function
         | None -> None
         | Some x -> Some ((pack_name, item_name), x)
 
-let fresh_register st =
-  st.vargen <- st.vargen + 1;
-  st.vargen - 1
+let fresh_register st name = Register.fresh st.vargen name
 
 (** [pattern_of_ast_pattern state map reg ast_pat] converts [ast_pat] from an
     [Ast.pattern] to [Term.ml] while collecting bound identifiers in [map],
@@ -51,7 +49,7 @@ let rec term_pattern_of_ast_pattern st map reg_opt (_, node) =
      let reg =
        match reg_opt with
        | Some reg -> reg
-       | None -> fresh_register st
+       | None -> fresh_register st (Some name)
      in
      begin match Map.add map ~key:name ~data:reg with
      | `Ok map -> Ok (Term.{node = Term.Wild; reg = Some reg}, map)
@@ -86,15 +84,15 @@ let rec term_of_expr st env (ann, node) =
            let regs =
              Map.fold ~f:(fun ~key:_ ~data:reg acc ->
                  Set.add acc reg
-               ) ~init:(Set.empty (module Int)) map
+               ) ~init:(Set.empty (module Register)) map
            in
            (pat, [], regs, body)::cases
          ) ~init:(Ok []) cases >>| fun cases ->
        Term.Case(scrutinee, [], cases)
 
     | Ast.Lam((_, patterns, _) as case, cases) ->
-       let reg = fresh_register st in
-       let regs = List.map ~f:(fun _ -> fresh_register st) patterns in
+       let reg = fresh_register st None in
+       let regs = List.map ~f:(fun _ -> fresh_register st None) patterns in
        let handle_branch (pat, pats, expr) =
          let map = Map.empty (module String) in
          term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
@@ -109,7 +107,7 @@ let rec term_of_expr st env (ann, node) =
          let regs =
            Map.fold ~f:(fun ~key:_ ~data:reg acc ->
                Set.add acc reg
-             ) ~init:(Set.empty (module Int)) map
+             ) ~init:(Set.empty (module Register)) map
          in (pat, pats, regs, term)
        in
        List.fold_right ~f:(fun branch acc ->
@@ -158,14 +156,14 @@ let rec term_of_expr st env (ann, node) =
        let regs =
          Map.fold ~f:(fun ~key:_ ~data:reg acc ->
              Set.add acc reg
-           ) ~init:(Set.empty (module Int)) map
+           ) ~init:(Set.empty (module Register)) map
        in Term.Case(def, discrs, [pat, pats, regs, body])
 
     | Ast.Let_rec(bindings, body) ->
        let bindings =
          List.fold_right ~f:(fun (str, expr) acc ->
              acc >>= fun (list, env) ->
-             let reg = fresh_register st in
+             let reg = fresh_register st (Some str) in
              match Env.add env str reg with
              | Some env -> Ok ((reg, expr)::list, env)
              | None ->

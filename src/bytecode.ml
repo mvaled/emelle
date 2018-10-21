@@ -35,14 +35,15 @@ and proc = {
   }
 
 type t = {
-    ctx : (int, operand) Hashtbl.t; (** Map from registers to variables *)
+    ctx : (Register.t, operand) Hashtbl.t;
+    (** Map from registers to variables *)
     free_vars : operand Queue.t; (** Array of free variables *)
     parent : t option;
     mutable frame_offset : int; (** Current offset from frame pointer *)
   }
 
 let create () =
-  { ctx = Hashtbl.create (module Int)
+  { ctx = Hashtbl.create (module Register)
   ; free_vars = Queue.create ()
   ; parent = None
   ; frame_offset = 0 }
@@ -133,7 +134,7 @@ and flatten_app self (args : operand list) (f : Lambda.t) (x : operand) =
    universally quantified if inferred. *)
 and compile_case
     : 'a . t -> Lambda.t -> Lambda.t list -> int Pattern.decision_tree
-      -> ((int, Int.comparator_witness) Set.t * 'a) list
+      -> ((Register.t, Register.comparator_witness) Set.t * 'a) list
       -> ('a -> (instr, Message.error Sequence.t) Result.t)
       -> (instr, Message.error Sequence.t) Result.t
   = fun self scrut scruts tree branches f ->
@@ -191,7 +192,7 @@ and instr_of_lambdacode self lambda =
      operand_of_lambdacode self lambda (fun operand -> Ok (Load operand))
   | Lambda.Lam(reg, body) ->
      let st =
-       { ctx = Hashtbl.create (module Int)
+       { ctx = Hashtbl.create (module Register)
        ; free_vars = Queue.create ()
        ; parent = Some self
        ; frame_offset = 0 }

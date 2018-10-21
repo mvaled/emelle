@@ -5,8 +5,8 @@ type command =
       Lambda.t
       * Lambda.t list
       * int Pattern.decision_tree
-      * (int, Int.comparator_witness) Set.t
-  | Let_rec of (int * Lambda.t) list
+      * (Register.t, Register.comparator_witness) Set.t
+  | Let_rec of (Register.t * Lambda.t) list
 
 type t =
   { desugarer : Desugar.t
@@ -97,7 +97,7 @@ let compile_items self env items exports =
        let matrix =
          [ { Pattern.first_pattern = pat
            ; rest_patterns = pats
-           ; bindings = Map.empty (module Int)
+           ; bindings = Map.empty (module Register)
            ; action = 0 } ]
        in
        Pattern.decision_tree_of_matrix
@@ -116,7 +116,7 @@ let compile_items self env items exports =
        let regs =
          Map.fold ~f:(fun ~key:_ ~data:reg acc ->
              Set.add acc reg
-           ) ~init:(Set.empty (module Int)) map
+           ) ~init:(Set.empty (module Register)) map
        in
        Queue.enqueue commands (Let(scrut, scruts, decision_tree, regs));
        loop env rest
@@ -125,7 +125,7 @@ let compile_items self env items exports =
        (* The two List.fold(_left)s cancel out the list reversal *)
        List.fold ~f:(fun acc (name, expr) ->
            acc >>= fun (env, list) ->
-           let reg = Desugar.fresh_register self.desugarer in
+           let reg = Desugar.fresh_register self.desugarer (Some name) in
            match Env.add env name reg with
            | None -> Error (Sequence.return (Message.Redefined_name name))
            | Some env ->

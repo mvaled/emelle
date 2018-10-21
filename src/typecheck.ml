@@ -3,7 +3,7 @@ open Base
 type t =
   { package : Package.t
   ; packages : (string, Package.t) Hashtbl.t
-  ; env : (int, Type.t) Hashtbl.t
+  ; env : (Register.t, Type.t) Hashtbl.t
   ; mutable level : int
   ; tvargen : Type.vargen
   ; kvargen : Kind.vargen }
@@ -12,7 +12,7 @@ type t =
 let create package packages =
   { package
   ; packages
-  ; env = Hashtbl.create (module Int)
+  ; env = Hashtbl.create (module Register)
   ; level = 0
   ; tvargen = Type.create_vargen ()
   ; kvargen = Kind.create_vargen () }
@@ -380,7 +380,7 @@ let rec infer checker =
          ( idx - 1
          , { Pattern.first_pattern = pat
            ; Pattern.rest_patterns = pats
-           ; Pattern.bindings = Map.empty (module Int)
+           ; Pattern.bindings = Map.empty (module Register)
            ; Pattern.action = idx }::matrix
          , (regs, consequent)::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
