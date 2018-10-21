@@ -29,6 +29,8 @@ let lower = ['a'-'z']
 let alphanum = upper | lower | digit
 let uident = upper (alphanum | '_' | '\'')*
 let lident = lower (alphanum | '_' | '\'')*
+let integer = ('-' | '+')? digit+
+let decimal = integer ('.' digit+)
 
 rule expr = parse
   | whitespace { expr lexbuf }
@@ -50,6 +52,8 @@ rule expr = parse
       | Some keyword -> keyword
       | None -> LIDENT str
     }
+  | integer { INT_LIT (Int.of_string (Lexing.lexeme lexbuf)) }
+  | decimal { FLOAT_LIT (Float.of_string (Lexing.lexeme lexbuf)) }
   | eof { EOF }
   | _ { raise (Error (Lexing.lexeme lexbuf)) }
 

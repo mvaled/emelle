@@ -31,6 +31,7 @@ let tests =
   ; "case fun x -> x with | x -> x | y -> x", Desugar
   ; "fun x -> x x", Typecheck
   ; "fun f -> let g = fun x -> f (x x) in g g", Typecheck
+  ; "0 0", Typecheck
   ; "let rec g = f and f = fun x -> x in g", End
   ; "let rec f = fun x -> x and g = f in g", End
   ; "let rec f = fun x -> f x in f", End
@@ -43,7 +44,13 @@ let tests =
   ; "let id = fun x -> x in id id", End
   ; "let rec id = fun x -> x and id2 = id in id id2 (id2 id)", End
   ; "case fun x -> x with id -> id id", End
-  ; "let id = fun x -> x in case id with x -> x x", End ]
+  ; "let id = fun x -> x in case id with x -> x x", End
+  ; "let two = fun _ -> 2 in two 5", End
+  ; "let two = fun _ -> 2.0 in two 9", End
+  ; "let two = fun _ -> +2 in two 6", End
+  ; "let two = fun _ -> +2.0 in two 4", End
+  ; "let minus_five = fun _ -> -5 in minus_five 0", End
+  ; "(fun x -> x) 0", End ]
 
 let test_phase f curr_phase input format phase =
   let result = f format in
