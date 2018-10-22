@@ -1,5 +1,13 @@
 open Base
 
+type t =
+  { node : pattern
+  ; reg : Register.t option }
+and pattern =
+  | Con of Type.adt * int * t list (** Constructor pattern *)
+  | Or of t * t
+  | Wild (** Wildcard pattern *)
+
 (** In the paper Compiling Pattern Matching to Good Decision Trees, an
     occurrence is either empty or an integer and an occurrence, but in
     my code, the occurrence must have an index into the pattern match
@@ -20,8 +28,8 @@ type 'a decision_tree =
   | Swap of int * 'a decision_tree
 
 type 'a row = {
-    first_pattern : Term.pattern;
-    rest_patterns : Term.pattern list;
+    first_pattern : t;
+    rest_patterns : t list;
     bindings : (Register.t, occurrence, Register.comparator_witness) Map.t;
     (** [bindings] holds a map from registers to already-popped occurrences. *)
     action : 'a
@@ -58,9 +66,9 @@ let find_adt pats =
   let rec f i pats =
     match pats with
     | [] -> None
-    | Term.{node = Con(adt, _, _); _}::_ -> Some (adt, i)
-    | Term.{node = Wild; _ }::xs -> f (i + 1) xs
-    | Term.{node = Or(p1, p2); _}::_ ->
+    | {node = Con(adt, _, _); _}::_ -> Some (adt, i)
+    | {node = Wild; _ }::xs -> f (i + 1) xs
+    | {node = Or(p1, p2); _}::_ ->
        match f i (p1::pats) with
        | Some x -> Some x
        | None ->
@@ -92,7 +100,7 @@ let rec specialize constr count occurrence rows =
       | [] -> rows
     in
     match row.first_pattern.node with
-    | Term.Con(_, id, cpats) when id = constr ->
+    | Con(_, id, cpats) when id = constr ->
        begin match cpats with
        | cpat::cpats ->
           { row with
@@ -101,18 +109,18 @@ let rec specialize constr count occurrence rows =
           ; bindings }::rows
        | [] -> handle_nullary_constr rows row
        end
-    | Term.Con _ -> rows
-    | Term.Wild ->
+    | Con _ -> rows
+    | Wild ->
        if count > 0 then
          { row with
-           first_pattern = { node = Term.Wild; reg = None }
+           first_pattern = { node = Wild; reg = None }
          ; rest_patterns =
-             ana row.rest_patterns { node = Term.Wild; reg = None } (count - 1)
+             ana row.rest_patterns { node = Wild; reg = None } (count - 1)
          ; bindings
          }::rows
        else
          handle_nullary_constr rows row
-    | Term.Or(p1, p2) ->
+    | Or(p1, p2) ->
        let mat1 =
          specialize constr count occurrence
            [{ row with
@@ -136,10 +144,10 @@ let rec default_matrix (rows : 'a row list) : 'a matrix =
     | [] -> rows
     | second_pat::pats ->
        match row.first_pattern.node with
-       | Term.Con _ -> rows
-       | Term.Wild ->
+       | Con _ -> rows
+       | Wild ->
           ({ row with first_pattern = second_pat; rest_patterns = pats }::rows)
-       | Term.Or(p1, p2) ->
+       | Or(p1, p2) ->
           let mat1 =
             default_matrix
               [{ row with
@@ -160,7 +168,7 @@ let map_regs_to_occs occurrences row =
     | [], [] -> Ok map
     | [], _::_ | _::_, [] -> Error Sequence.empty
     | occ::occs, pat::pats ->
-       match pat.Term.reg with
+       match pat.reg with
        | None -> helper map occs pats
        | Some reg -> helper (Map.set map ~key:reg ~data:occ) occs pats
   in helper row.bindings occurrences (row.first_pattern::row.rest_patterns)

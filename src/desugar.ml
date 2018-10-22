@@ -30,20 +30,20 @@ let fresh_register st name = Register.fresh st.vargen name
 (** [pattern_of_ast_pattern state map reg ast_pat] converts [ast_pat] from an
     [Ast.pattern] to [Term.ml] while collecting bound identifiers in [map],
     returning [Error] if a data constructor or type isn't defined. *)
-let rec term_pattern_of_ast_pattern st map reg_opt (_, node) =
+let rec pattern_of_ast_pattern st map reg_opt (_, node) =
   let open Result.Monad_infix in
   match node with
   | Ast.Con(constr_path, pats) ->
      let f next acc =
        acc >>= fun (pats, map) ->
-       term_pattern_of_ast_pattern st map None next >>| fun (pat, map) ->
+       pattern_of_ast_pattern st map None next >>| fun (pat, map) ->
        (pat::pats, map)
      in
      begin match find Package.find_adt st constr_path with
      | None -> Error (Sequence.return (Message.Unresolved_path constr_path))
      | Some (_, (adt, idx)) ->
         List.fold_right ~f:f ~init:(Ok ([], map)) pats >>| fun (pats, map) ->
-        (Term.{node = Term.Con(adt, idx, pats); reg = reg_opt}, map)
+        (Pattern.{node = Con(adt, idx, pats); reg = reg_opt}, map)
      end
   | Ast.Var name ->
      let reg =
@@ -52,10 +52,10 @@ let rec term_pattern_of_ast_pattern st map reg_opt (_, node) =
        | None -> fresh_register st (Some name)
      in
      begin match Map.add map ~key:name ~data:reg with
-     | `Ok map -> Ok (Term.{node = Term.Wild; reg = Some reg}, map)
+     | `Ok map -> Ok (Pattern.{node = Wild; reg = Some reg}, map)
      | `Duplicate -> Error (Sequence.return (Message.Redefined_name name))
      end
-  | Ast.Wild -> Ok (Term.{node = Term.Wild; reg = reg_opt}, map)
+  | Ast.Wild -> Ok (Pattern.{node = Wild; reg = reg_opt}, map)
 
 (** [term_of_expr desugarer env expr] converts [expr] from an [Ast.expr] to a
     [Term.t]. *)
@@ -76,7 +76,7 @@ let rec term_of_expr st env (ann, node) =
          ~f:(fun (pat, expr) acc ->
            acc >>= fun cases ->
            let map = Map.empty (module String) in
-           term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
+           pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
            Env.in_scope_with (fun env ->
                term_of_expr st env expr
              ) map env
@@ -95,10 +95,10 @@ let rec term_of_expr st env (ann, node) =
        let regs = List.map ~f:(fun _ -> fresh_register st None) patterns in
        let handle_branch (pat, pats, expr) =
          let map = Map.empty (module String) in
-         term_pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
+         pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
          List.fold_right ~f:(fun pat acc ->
              acc >>= fun (list, map) ->
-             term_pattern_of_ast_pattern st map None pat >>| fun (pat, map) ->
+             pattern_of_ast_pattern st map None pat >>| fun (pat, map) ->
              (pat::list, map)
            ) ~init:(Ok ([], map)) pats >>= fun (pats, map) ->
          Env.in_scope_with (fun env ->
@@ -122,7 +122,7 @@ let rec term_of_expr st env (ann, node) =
            Term.Lam(reg, body)
          ) ~init:case_term (reg::regs)
 
-    | Ast.Let((pat, def), bindings, body) ->
+    | Ast.Let(binding, bindings, body) ->
        (* Transform
 
               let p1 = e1
@@ -140,46 +140,14 @@ let rec term_of_expr st env (ann, node) =
           evaluate and match with its LHS pattern from top to bottom, but with
           the case desugar, all of the RHS expressions evaluate before any of
           them match with the LHS pattern. Is this desugar sensible? *)
-       term_of_expr st env def >>= fun def ->
-       term_pattern_of_ast_pattern st (Map.empty (module String)) None pat
-       >>= fun (pat, map) ->
-       List.fold_right ~f:(fun (pat, def) acc ->
-           acc >>= fun (map, discrs, pats) ->
-           term_of_expr st env def >>= fun def ->
-           term_pattern_of_ast_pattern st map None pat
-           >>| fun (pat, map) ->
-           (map, def::discrs, pat::pats)
-         ) ~init:(Ok (map, [], [])) bindings
-       >>= fun (map, discrs, pats) ->
+       compile_let_bindings st env binding bindings
+       >>= fun (map, scrut, scruts, regs, pat, pats) ->
        Env.in_scope_with (fun env -> term_of_expr st env body) map env
-       >>| fun body ->
-       let regs =
-         Map.fold ~f:(fun ~key:_ ~data:reg acc ->
-             Set.add acc reg
-           ) ~init:(Set.empty (module Register)) map
-       in Term.Case(def, discrs, [pat, pats, regs, body])
+       >>| fun body -> Term.Case(scrut, scruts, [pat, pats, regs, body])
 
     | Ast.Let_rec(bindings, body) ->
-       let bindings =
-         List.fold_right ~f:(fun (str, expr) acc ->
-             acc >>= fun (list, env) ->
-             let reg = fresh_register st (Some str) in
-             match Env.add env str reg with
-             | Some env -> Ok ((reg, expr)::list, env)
-             | None ->
-                Error (Sequence.return (Message.Redefined_name str))
-           ) ~init:(Ok ([], env)) bindings;
-       in
-       bindings >>= fun (bindings, env) ->
        Env.in_scope (fun env ->
-           let bindings =
-             List.fold_right ~f:(fun (reg, expr) acc ->
-                 acc >>= fun list ->
-                 term_of_expr st env expr >>| fun term ->
-                 (reg, term)::list
-               ) ~init:(Ok []) bindings
-           in
-           bindings >>= fun bindings ->
+           desugar_rec_bindings st env bindings >>= fun (env, bindings) ->
            term_of_expr st env body >>| fun body ->
            Term.Let_rec(bindings, body)
          ) env
@@ -200,3 +168,69 @@ let rec term_of_expr st env (ann, node) =
           | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })
+
+and desugar_rec_bindings self env bindings =
+  let open Result.Monad_infix in
+  let bindings =
+    List.fold_right ~f:(fun (str, expr) acc ->
+        acc >>= fun (env, list) ->
+        let reg = fresh_register self (Some str) in
+        match Env.add env str reg with
+        | Some env -> Ok (env, (reg, expr)::list)
+        | None -> Error (Sequence.return (Message.Redefined_name str))
+      ) ~init:(Ok (env, [])) bindings
+  in
+  bindings >>= fun (env, bindings) ->
+  List.fold_right ~f:(fun (reg, expr) acc ->
+      acc >>= fun list ->
+      term_of_expr self env expr >>| fun term ->
+      (reg, term)::list
+    ) ~init:(Ok []) bindings
+  >>| fun bindings -> (env, bindings)
+
+and compile_let_bindings self env binding bindings =
+  let open Result.Monad_infix in
+  let f map (pat, expr) =
+    pattern_of_ast_pattern self map None pat
+    >>= fun (pat, map) ->
+    term_of_expr self env expr
+    >>| fun term ->
+    (pat, term, map)
+  in
+  let map = Map.empty (module String) in
+  f map binding >>= fun (pat, scrut, map) ->
+  List.fold_right ~f:(fun binding acc ->
+      acc >>= fun (map, scruts, pats) ->
+      f map binding >>| fun (pat, term, map) ->
+      (map, term::scruts, pat::pats)
+    ) ~init:(Ok (map, [], [])) bindings
+  >>| fun (map, scruts, pats) ->
+  let regs =
+    Map.fold ~f:(fun ~key:_ ~data:reg acc ->
+        Set.add acc reg
+      ) ~init:(Set.empty (module Register)) map
+  in (map, scrut, scruts, regs, pat, pats)
+
+let compile_package_item self env =
+  let open Result.Monad_infix in
+  function
+  | Ast.Adt adt -> Ok (env, Term.Adt_item [adt])
+  | Ast.Let(binding, bindings) ->
+     compile_let_bindings self env binding bindings
+     >>| fun (map, scrut, scruts, regs, pat, pats) ->
+     (Env.extend env map, Term.Let_item(scrut, scruts, regs, pat, pats))
+  | Ast.Let_rec bindings ->
+     desugar_rec_bindings self env bindings >>| fun (env, bindings) ->
+     (env, Term.Let_rec_item(bindings))
+
+let compile_package self package =
+  let open Result.Monad_infix in
+  let env = Env.empty (module String) in
+  List.fold_right ~f:(fun item acc ->
+      acc >>= fun (env, list) ->
+      compile_package_item self env item
+      >>| fun (env, item) ->
+      (env, item::list)
+    ) ~init:(Ok (env, [])) package.Ast.items
+  >>| fun (env, items) ->
+  Term.{ env; items }

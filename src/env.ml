@@ -14,6 +14,11 @@ let of_map map =
   { curr = map
   ; parents = Map.empty (Map.comparator_s map) }
 
+let extend parent map =
+  let combine ~key:_ x _ = x in
+  { curr = map
+  ; parents = Map.merge_skewed parent.parents parent.curr ~combine }
+
 let in_scope_with f frame env =
   let combine ~key:_ x _ = x in
   let env' =

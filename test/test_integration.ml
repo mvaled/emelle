@@ -83,7 +83,8 @@ let test (input, phase) =
   in
   next >>= fun next ->
   let typechecker = Typecheck.create package packages in
-  let next = test_phase (Typecheck.infer typechecker) Typecheck input next phase
+  let next =
+    test_phase (Typecheck.infer_term typechecker) Typecheck input next phase
   in next
 
 let _ = List.map ~f:test tests

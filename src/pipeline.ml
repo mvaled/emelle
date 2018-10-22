@@ -80,20 +80,20 @@ let compile_item self env commands item ~cont =
 
   | Ast.Let((pat, scrut), bindings) ->
      let map = Map.empty (module String) in
-     Desugar.term_pattern_of_ast_pattern self.desugarer map None pat
+     Desugar.pattern_of_ast_pattern self.desugarer map None pat
      >>= fun (pat, map) ->
      Desugar.term_of_expr self.desugarer env scrut
      >>= fun scrut ->
-     Typecheck.infer self.typechecker scrut >>= fun scrut ->
+     Typecheck.infer_term self.typechecker scrut >>= fun scrut ->
      Typecheck.infer_pattern
        self.typechecker (Typecheck.gen self.typechecker scrut.Lambda.ty) pat
      >>= fun () ->
      List.fold_right ~f:(fun (pat, scrut) acc ->
          acc >>= fun (map, scruts, pats) ->
          Desugar.term_of_expr self.desugarer env scrut >>= fun scrut ->
-         Desugar.term_pattern_of_ast_pattern self.desugarer map None pat
+         Desugar.pattern_of_ast_pattern self.desugarer map None pat
          >>= fun (pat, map) ->
-         Typecheck.infer self.typechecker scrut
+         Typecheck.infer_term self.typechecker scrut
          >>= fun scrut ->
          Typecheck.infer_pattern self.typechecker
            (Typecheck.gen self.typechecker scrut.Lambda.ty) pat
@@ -145,7 +145,7 @@ let compile_item self env commands item ~cont =
      List.fold ~f:(fun acc (reg, expr) ->
          acc >>= fun list ->
          Desugar.term_of_expr self.desugarer env expr >>= fun term ->
-         Typecheck.infer self.typechecker term >>| fun lambda ->
+         Typecheck.infer_term self.typechecker term >>| fun lambda ->
          (reg, lambda)::list
        ) ~init:(Ok []) bindings
      >>= fun bindings ->
