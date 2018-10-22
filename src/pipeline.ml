@@ -78,28 +78,20 @@ let compile_item self env commands item ~cont =
            cont env commands
      end
 
-  | Ast.Let((pat, scrut), bindings) ->
-     let map = Map.empty (module String) in
-     Desugar.pattern_of_ast_pattern self.desugarer map None pat
-     >>= fun (pat, map) ->
-     Desugar.term_of_expr self.desugarer env scrut
-     >>= fun scrut ->
-     Typecheck.infer_term self.typechecker scrut >>= fun scrut ->
-     Typecheck.infer_pattern
-       self.typechecker (Typecheck.gen self.typechecker scrut.Lambda.ty) pat
-     >>= fun () ->
-     List.fold_right ~f:(fun (pat, scrut) acc ->
-         acc >>= fun (map, scruts, pats) ->
-         Desugar.term_of_expr self.desugarer env scrut >>= fun scrut ->
-         Desugar.pattern_of_ast_pattern self.desugarer map None pat
-         >>= fun (pat, map) ->
-         Typecheck.infer_term self.typechecker scrut
-         >>= fun scrut ->
-         Typecheck.infer_pattern self.typechecker
-           (Typecheck.gen self.typechecker scrut.Lambda.ty) pat
-         >>| fun () -> (map, scrut::scruts, pat::pats)
-       ) ~init:(Ok (map, [], [])) bindings
-     >>= fun (map, scruts, pats) ->
+  | Ast.Let(binding, bindings) ->
+     Desugar.desugar_let_bindings self.desugarer env binding bindings
+     >>= fun (map, scrut, scruts, regs, pat, pats) ->
+     Typecheck.in_new_level (fun checker ->
+         Typecheck.infer_term checker scrut
+       ) self.typechecker >>= fun scrut ->
+     List.fold_right ~f:(fun scrut acc ->
+         acc >>= fun list ->
+         Typecheck.in_new_level (fun checker ->
+             Typecheck.infer_term checker scrut
+           ) self.typechecker >>| fun expr ->
+         expr::list
+       ) ~init:(Ok []) scruts >>= fun scruts ->
+     Typecheck.infer_branch self.typechecker scrut scruts pat pats >>= fun () ->
      let matrix =
        [ { Pattern.first_pattern = pat
          ; rest_patterns = pats
@@ -119,35 +111,12 @@ let compile_item self env commands item ~cont =
          | None -> Error (Sequence.return (Message.Redefined_name key))
        ) ~init:(Ok env) map
      >>= fun env ->
-     let regs =
-       Map.fold ~f:(fun ~key:_ ~data:reg acc ->
-           Set.add acc reg
-         ) ~init:(Set.empty (module Register)) map
-     in
      cont env ((Let(scrut, scruts, decision_tree, regs))::commands)
 
   | Ast.Let_rec bindings ->
-     (* The two List.fold(_left)s cancel out the list reversal *)
-     List.fold ~f:(fun acc (name, expr) ->
-         acc >>= fun (env, list) ->
-         let reg = Desugar.fresh_register self.desugarer (Some name) in
-         match Env.add env name reg with
-         | None -> Error (Sequence.return (Message.Redefined_name name))
-         | Some env ->
-            let tvar = Typecheck.fresh_tvar self.typechecker in
-            match Hashtbl.add self.typechecker.env ~key:reg ~data:tvar with
-            | `Duplicate ->
-               Error (Sequence.return
-                        (Message.Unreachable "Pipeline let rec"))
-            | `Ok -> Ok (env, (reg, expr)::list)
-       ) ~init:(Ok (env, [])) bindings
+     Desugar.desugar_rec_bindings self.desugarer env bindings
      >>= fun (env, bindings) ->
-     List.fold ~f:(fun acc (reg, expr) ->
-         acc >>= fun list ->
-         Desugar.term_of_expr self.desugarer env expr >>= fun term ->
-         Typecheck.infer_term self.typechecker term >>| fun lambda ->
-         (reg, lambda)::list
-       ) ~init:(Ok []) bindings
+     Typecheck.infer_rec_bindings self.typechecker bindings
      >>= fun bindings ->
      List.iter ~f:(fun (lhs, _) ->
          Hashtbl.change self.typechecker.env lhs ~f:(function
