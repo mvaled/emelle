@@ -16,12 +16,3 @@ and expr =
   | Local_var of Register.t
 
 and bindings = (Register.t, Register.comparator_witness) Set.t
-
-and structure = {
-    items : struct_item list
-  }
-
-and struct_item =
-  | Adt_item of Type.adt list
-  | Let_item of t * t list * bindings * Pattern.t * Pattern.t list
-  | Let_rec_item of (Register.t * t) list

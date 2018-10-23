@@ -16,13 +16,3 @@ and 'a bind_group = (Register.t * 'a t) list
 and reg_set = (Register.t, Register.comparator_witness) Set.t
 
 and 'a branch = Pattern.t * Pattern.t list * reg_set * 'a
-
-and 'a structure = {
-    env : (string, Register.t, String.comparator_witness) Env.t;
-    items : 'a struct_item list
-  }
-
-and 'a struct_item =
-  | Let_item of 'a t * 'a t list * reg_set * Pattern.t * Pattern.t list
-  | Let_rec_item of (Register.t * 'a t) list
-  | Adt_item of 'a Ast.adt list

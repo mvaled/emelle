@@ -210,27 +210,3 @@ and desugar_let_bindings self env binding bindings =
         Set.add acc reg
       ) ~init:(Set.empty (module Register)) map
   in (map, scrut, scruts, regs, pat, pats)
-
-let compile_package_item self env =
-  let open Result.Monad_infix in
-  function
-  | Ast.Adt adt -> Ok (env, Term.Adt_item [adt])
-  | Ast.Let(binding, bindings) ->
-     desugar_let_bindings self env binding bindings
-     >>| fun (map, scrut, scruts, regs, pat, pats) ->
-     (Env.extend env map, Term.Let_item(scrut, scruts, regs, pat, pats))
-  | Ast.Let_rec bindings ->
-     desugar_rec_bindings self env bindings >>| fun (env, bindings) ->
-     (env, Term.Let_rec_item(bindings))
-
-let compile_package self package =
-  let open Result.Monad_infix in
-  let env = Env.empty (module String) in
-  List.fold_right ~f:(fun item acc ->
-      acc >>= fun (env, list) ->
-      compile_package_item self env item
-      >>| fun (env, item) ->
-      (env, item::list)
-    ) ~init:(Ok (env, [])) package.Ast.items
-  >>| fun (env, items) ->
-  Term.{ env; items }
