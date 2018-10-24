@@ -97,6 +97,7 @@ let tests =
   ; "() type Option a = None | Some a"
   ; "(id2, id) let id = fun x -> x let id2 = id"
   ; "() type Foo = Foo type Bar = Bar Foo"
+  ; "() type Bar = Bar Foo and Foo = Foo"
   ; "() type List a = Nil | Cons a (List a)"
   ; "(id, id2, id3) let rec id = fun x -> x and id2 = id let id3 = id2 id id2"
   ; "(id, id2) let id = fun x -> x let id2 = id id" ]

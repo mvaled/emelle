@@ -38,9 +38,9 @@ type 'a adt =
   ; constrs : (string * 'a monotype list) list }
 
 type 'a item =
-  | Adt of 'a adt
   | Let of ('a pattern * 'a expr) * ('a pattern * 'a expr) list
   | Let_rec of (string * 'a expr) list
+  | Type of 'a adt * 'a adt list
 
 type 'a file =
   { exports : string list

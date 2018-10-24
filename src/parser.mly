@@ -63,7 +63,7 @@ package:
 item:
   | LET binding list(AND binding { $2 }) { Ast.Let($2, $3) }
   | LET REC separated_nonempty_list(AND, rec_binding) { Ast.Let_rec $3 }
-  | TYPE adt { Ast.Adt $2 }
+  | TYPE adt list(AND adt { $2 }) { Ast.Type($2, $3) }
   ;
 
 adt:

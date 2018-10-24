@@ -24,18 +24,6 @@ let create name packages =
   ; package
   ; packages }
 
-let precompile self =
-  let open Result.Monad_infix in
-  List.fold ~f:(fun acc next ->
-      acc >>= fun () ->
-      match next with
-      | Ast.Adt adt ->
-         let kvar = Kind.fresh_var self.typechecker.Typecheck.kvargen in
-         Package.add_typedef
-           self.package adt.Ast.name (Package.Todo (Kind.Var kvar))
-      | _ -> Ok ()
-    ) ~init:(Ok ())
-
 let export self env exports =
   let open Result.Monad_infix in
   List.fold ~f:(fun acc name ->
@@ -63,21 +51,6 @@ let export self env exports =
 let compile_item self env commands item ~cont =
   let open Result.Monad_infix in
   match item with
-  | Ast.Adt adt ->
-     Typecheck.type_adt_of_ast_adt self.typechecker adt >>= fun adt ->
-     begin match Package.find_typedef self.package adt.Type.name with
-     | None -> Error (Sequence.return (Message.Unreachable "Pipeline ADT"))
-     | Some ptr ->
-        match !ptr with
-        | Package.Compiled _ ->
-           Error (Sequence.return (Message.Redefined_name adt.Type.name))
-        | Package.Todo kind ->
-           Typecheck.unify_kinds kind (Type.kind_of_adt adt) >>= fun () ->
-           Package.add_constrs self.package adt >>= fun () ->
-           ptr := Package.Compiled (Type.Manifest adt);
-           cont env commands
-     end
-
   | Ast.Let(binding, bindings) ->
      Desugar.desugar_let_bindings self.desugarer env binding bindings
      >>= fun (map, scrut, scruts, regs, pat, pats) ->
@@ -126,6 +99,30 @@ let compile_item self env commands item ~cont =
        ) bindings;
      cont env ((Let_rec bindings)::commands)
 
+  | Ast.Type(adt, adts) ->
+     List.fold ~f:(fun acc adt ->
+         acc >>= fun () ->
+         let kvar = Kind.fresh_var self.typechecker.Typecheck.kvargen in
+         Package.add_typedef
+           self.package adt.Ast.name (Package.Todo (Kind.Var kvar))
+       ) ~init:(Ok ()) (adt::adts) >>= fun () ->
+     List.fold ~f:(fun acc adt ->
+         acc >>= fun () ->
+         Typecheck.type_adt_of_ast_adt self.typechecker adt >>= fun adt ->
+         match Package.find_typedef self.package adt.Type.name with
+         | None -> Error (Sequence.return (Message.Unreachable "Pipeline ADT"))
+         | Some ptr ->
+            match !ptr with
+            | Package.Compiled _ ->
+               Error (Sequence.return (Message.Redefined_name adt.Type.name))
+            | Package.Todo kind ->
+               Typecheck.unify_kinds kind (Type.kind_of_adt adt) >>= fun () ->
+               Package.add_constrs self.package adt >>= fun () ->
+               ptr := Package.Compiled (Type.Manifest adt);
+               Ok ()
+       ) ~init:(Ok ()) (adt::adts) >>= fun () ->
+     cont env commands
+
 let compile_items self env items exports =
   let rec loop env list = function
     | item::items ->
@@ -146,9 +143,6 @@ let compile_items self env items exports =
   in loop env [] items
 
 let compile packages name ast_package =
-  let open Result.Monad_infix in
   let st = create name packages in
-  precompile st ast_package.Ast.items
-  >>= fun () ->
   compile_items
     st (Env.empty (module String)) ast_package.Ast.items ast_package.Ast.exports
