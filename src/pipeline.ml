@@ -66,8 +66,7 @@ let compile_item self env commands item ~cont =
        ) ~init:(Ok []) scruts >>= fun scruts ->
      Typecheck.infer_branch self.typechecker scrut scruts pat pats >>= fun () ->
      let matrix =
-       [ { Pattern.first_pattern = pat
-         ; rest_patterns = pats
+       [ { Pattern.patterns = pat::pats
          ; bindings = Map.empty (module Register)
          ; action = 0 } ]
      in

@@ -28,8 +28,7 @@ type 'a decision_tree =
   | Swap of int * 'a decision_tree
 
 type 'a row = {
-    first_pattern : t;
-    rest_patterns : t list;
+    patterns : t list;
     bindings : (Register.t, occurrence, Register.comparator_witness) Map.t;
     (** [bindings] holds a map from registers to already-popped occurrences. *)
     action : 'a
@@ -46,10 +45,9 @@ let swap_column_of_row (idx : int) (row : 'a row) =
     | x::next -> f (idx - 1) (x::left) next
     | [] -> None
   in
-  match f idx [] (row.first_pattern::row.rest_patterns) with
+  match f idx [] row.patterns with
   | Some (left, pivot, right) ->
-     Some { row with first_pattern = pivot
-                   ; rest_patterns = List.rev_append left right }
+     Some { row with patterns = pivot::(List.rev_append left right) }
   | None -> None
 
 (** Column-swapping operation for matrices *)
@@ -80,87 +78,70 @@ let find_adt pats =
 (** Specialize operation as described in Compiling Pattern Matching to Good
     Decision Trees *)
 let rec specialize constr count occurrence rows =
+  let open Option.Monad_infix in
   let helper row rows =
-    let bindings =
-      match row.first_pattern.reg with
-      | None -> row.bindings
-      | Some reg -> Map.set row.bindings ~key:reg ~data:occurrence
-    in
-    (* Anamorphism over lists, catamorphism over the natural numbers *)
-    let rec ana coacc next = function
-      | 0 -> coacc
-      | n -> next::(ana coacc next (n - 1)) in
-    let handle_nullary_constr rows row =
-      match row.rest_patterns with
-      | pat::pats ->
-         { row with
-           first_pattern = pat
-         ; rest_patterns = pats
-         ; bindings }::rows
-      | [] -> rows
-    in
-    match row.first_pattern.node with
-    | Con(_, id, cpats) when id = constr ->
-       begin match cpats with
-       | cpat::cpats ->
-          { row with
-            first_pattern = cpat
-          ; rest_patterns = cpats@row.rest_patterns
-          ; bindings }::rows
-       | [] -> handle_nullary_constr rows row
-       end
-    | Con _ -> rows
-    | Wild ->
-       if count > 0 then
-         { row with
-           first_pattern = { node = Wild; reg = None }
-         ; rest_patterns =
-             ana row.rest_patterns { node = Wild; reg = None } (count - 1)
-         ; bindings
-         }::rows
-       else
-         handle_nullary_constr rows row
-    | Or(p1, p2) ->
-       let mat1 =
-         specialize constr count occurrence
-           [{ row with
-              first_pattern = p1
-            ; rest_patterns = row.rest_patterns
-            ; bindings }]
+    match row.patterns with
+    | [] -> None
+    | first_pat::rest_pats ->
+       let bindings =
+         match first_pat.reg with
+         | None -> row.bindings
+         | Some reg -> Map.set row.bindings ~key:reg ~data:occurrence
        in
-       let mat2 =
-         specialize constr count occurrence
-           [{ row with
-              first_pattern = p2
-            ; rest_patterns = row.rest_patterns
-            ; bindings }]
-       in mat1@mat2@rows
-  in List.fold_right ~f:helper ~init:[] rows
+       (* Anamorphism over lists, catamorphism over the natural numbers *)
+       let rec ana coacc next = function
+         | 0 -> coacc
+         | n -> next::(ana coacc next (n - 1))
+       in
+       match first_pat.node with
+       | Con(_, id, cpats) when id = constr ->
+          Some ({ row with
+                  patterns = cpats@rest_pats
+                ; bindings }::rows)
+       | Con _ -> Some rows
+       | Wild ->
+          Some ({ row with
+                  patterns =
+                    ana row.patterns { node = Wild; reg = None } count
+                ; bindings }::rows)
+       | Or(p1, p2) ->
+          specialize constr count occurrence
+            [{ row with
+               patterns = p1::rest_pats
+             ; bindings }]
+          >>= fun mat1 ->
+          specialize constr count occurrence
+            [{ row with
+               patterns = p2::rest_pats
+             ; bindings }]
+          >>| fun mat2 ->
+          mat1@mat2@rows
+  in
+  List.fold_right ~f:(fun row acc ->
+      acc >>= fun rows -> helper row rows
+    ) ~init:(Some []) rows
 
 (** Construct the default matrix *)
-let rec default_matrix (rows : 'a row list) : 'a matrix =
+let rec default_matrix rows =
+  let open Option.Monad_infix in
   let helper row rows =
-    match row.rest_patterns with
-    | [] -> rows
-    | second_pat::pats ->
-       match row.first_pattern.node with
-       | Con _ -> rows
+    match row.patterns with
+    | [] -> None
+    | first_pat::rest_pats ->
+       match first_pat.node with
+       | Con _ -> Some rows
        | Wild ->
-          ({ row with first_pattern = second_pat; rest_patterns = pats }::rows)
+          Some ({ row with patterns = rest_pats }::rows)
        | Or(p1, p2) ->
-          let mat1 =
-            default_matrix
-              [{ row with
-                 first_pattern = p1
-               ; rest_patterns = pats }]
-          in
-          let mat2 =
-            default_matrix
-              [{ row with
-                 first_pattern = p2
-               ; rest_patterns = pats }]
-          in mat1@mat2@rows
-  in List.fold_right ~f:helper ~init:[] rows
+          default_matrix [{ row with patterns = p1::rest_pats }]
+          >>= fun mat1 ->
+          default_matrix [{ row with patterns = p2::rest_pats }]
+          >>| fun mat2 ->
+          mat1@mat2@rows
+  in
+  List.fold_right ~f:(fun row acc ->
+      acc >>= fun rows -> helper row rows
+    ) ~init:(Some []) rows
 
 let map_regs_to_occs occurrences row =
   let rec helper map occurrences list =
@@ -171,7 +152,7 @@ let map_regs_to_occs occurrences row =
        match pat.reg with
        | None -> helper map occs pats
        | Some reg -> helper (Map.set map ~key:reg ~data:occ) occs pats
-  in helper row.bindings occurrences (row.first_pattern::row.rest_patterns)
+  in helper row.bindings occurrences row.patterns
 
 (** Corresponds with swap_columns and swap_column_of_row (The occurrences vector
     is like another row) *)
@@ -192,7 +173,7 @@ let rec decision_tree_of_matrix occurrences =
   function
   | [] -> Ok Fail (* Case 1 *)
   | (row::rows') as rows ->
-     match find_adt (row.first_pattern::row.rest_patterns) with
+     match find_adt row.patterns with
      | None ->
         (* Case 2 *)
         map_regs_to_occs occurrences row >>| fun map ->
@@ -200,34 +181,39 @@ let rec decision_tree_of_matrix occurrences =
      | Some(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
-        let default = default_matrix rows in
-        match swap_occurrences i occurrences with
+        match default_matrix rows with
         | None -> Error Sequence.empty
-        | Some (first_occ, rest_occs) ->
-           let (_, product) = alg.Type.constrs.(i) in
-           (* Just like how the matched value is popped off the stack and its
-              children pushed on the stack, pop off the selected occurrence and
-              push occurrences for its subterms *)
-           let rec push_occs rest idx = function
-             | [] -> rest
-             | _::xs -> (Cons(idx, first_occ))::(push_occs rest (idx + 1) xs)
-           in
-           let pushed_occs = push_occs rest_occs 0 product in
-           match swap_column i rows' with
+        | Some default ->
+           match swap_occurrences i occurrences with
            | None -> Error Sequence.empty
-           | Some rows ->
-              Array.foldi ~f:(fun id acc (_, products) ->
-                  acc >>= fun () ->
-                  match specialize id (List.length products) first_occ rows with
-                  | [] -> Ok ()
-                  | matrix ->
-                     match decision_tree_of_matrix pushed_occs matrix with
-                     | Ok tree ->
-                        Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
-                        Ok ()
-                     | Error e -> Error e
-                ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
-              decision_tree_of_matrix rest_occs default
-              >>| fun default_tree ->
-              let switch = Switch(first_occ, jump_tbl, default_tree) in
-              if i = 0 then switch else Swap(i, switch)
+           | Some (first_occ, rest_occs) ->
+              let (_, product) = alg.Type.constrs.(i) in
+              (* Just like how the matched value is popped off the stack and its
+                 children pushed on the stack, pop off the selected occurrence
+                 and push occurrences for its subterms *)
+              let rec push_occs rest idx = function
+                | [] -> rest
+                | _::xs -> (Cons(idx, first_occ))::(push_occs rest (idx + 1) xs)
+              in
+              let pushed_occs = push_occs rest_occs 0 product in
+              match swap_column i rows' with
+              | None -> Error Sequence.empty
+              | Some rows ->
+                 Array.foldi ~f:(fun id acc (_, products) ->
+                     acc >>= fun () ->
+                     match
+                       specialize id (List.length products) first_occ rows
+                     with
+                     | None -> Error Sequence.empty
+                     | Some [] -> Ok ()
+                     | Some matrix ->
+                        match decision_tree_of_matrix pushed_occs matrix with
+                        | Ok tree ->
+                           Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
+                           Ok ()
+                        | Error e -> Error e
+                   ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
+                 decision_tree_of_matrix rest_occs default
+                 >>| fun default_tree ->
+                 let switch = Switch(first_occ, jump_tbl, default_tree) in
+                 if i = 0 then switch else Swap(i, switch)

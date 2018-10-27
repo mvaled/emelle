@@ -367,8 +367,7 @@ let rec infer_term checker =
          infer_term checker consequent >>= fun consequent ->
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
          ( idx - 1
-         , { Pattern.first_pattern = pat
-           ; rest_patterns = pats
+         , { Pattern.patterns = pat::pats
            ; bindings = Map.empty (module Register)
            ; action = idx }::matrix
          , (regs, consequent)::branches )
