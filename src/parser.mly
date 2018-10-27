@@ -61,7 +61,7 @@ package:
     }
 
 item:
-  | LET binding list(AND binding { $2 }) { Ast.Let($2, $3) }
+  | LET separated_list(AND, binding) { Ast.Let $2 }
   | LET REC separated_nonempty_list(AND, rec_binding) { Ast.Let_rec $3 }
   | TYPE adt list(AND adt { $2 }) { Ast.Type($2, $3) }
   ;
@@ -107,8 +107,8 @@ expr_kw:
   | FUN option(BAR) lambda_case list(BAR lambda_case { $2 }) {
         (($symbolstartpos, $endpos), Ast.Lam($3, $4))
       }
-  | LET binding = binding bindings = list(AND binding { $2 }) IN body = expr {
-        (($symbolstartpos, $endpos), Ast.Let(binding, bindings, body))
+  | LET bindings = separated_list(AND, binding) IN body = expr {
+        (($symbolstartpos, $endpos), Ast.Let(bindings, body))
       }
   | LET REC bindings = separated_list(AND, rec_binding) IN body = expr {
         (($symbolstartpos, $endpos), Ast.Let_rec(bindings, body))

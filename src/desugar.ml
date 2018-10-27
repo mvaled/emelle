@@ -86,9 +86,9 @@ let rec term_of_expr st env (ann, node) =
                  Set.add acc reg
                ) ~init:(Set.empty (module Register)) map
            in
-           (pat, [], regs, body)::cases
+           ([pat], regs, body)::cases
          ) ~init:(Ok []) cases >>| fun cases ->
-       Term.Case(scrutinee, [], cases)
+       Term.Case([scrutinee], cases)
 
     | Ast.Lam((_, patterns, _) as case, cases) ->
        let reg = fresh_register st None in
@@ -108,7 +108,7 @@ let rec term_of_expr st env (ann, node) =
            Map.fold ~f:(fun ~key:_ ~data:reg acc ->
                Set.add acc reg
              ) ~init:(Set.empty (module Register)) map
-         in (pat, pats, regs, term)
+         in (pat::pats, regs, term)
        in
        List.fold_right ~f:(fun branch acc ->
            acc >>= fun rows ->
@@ -116,13 +116,13 @@ let rec term_of_expr st env (ann, node) =
            row::rows
          ) ~init:(Ok []) (case::cases) >>| fun cases ->
        let case_term =
-         Term.Case(Term.Var reg, List.map ~f:(fun x -> Term.Var x) regs, cases)
+         Term.Case(List.map ~f:(fun x -> Term.Var x) (reg::regs), cases)
        in
        List.fold_right ~f:(fun reg body ->
            Term.Lam(reg, body)
          ) ~init:case_term (reg::regs)
 
-    | Ast.Let(binding, bindings, body) ->
+    | Ast.Let(bindings, body) ->
        (* Transform
 
               let p1 = e1
@@ -140,10 +140,10 @@ let rec term_of_expr st env (ann, node) =
           evaluate and match with its LHS pattern from top to bottom, but with
           the case desugar, all of the RHS expressions evaluate before any of
           them match with the LHS pattern. Is this desugar sensible? *)
-       desugar_let_bindings st env binding bindings
-       >>= fun (map, scrut, scruts, regs, pat, pats) ->
+       desugar_let_bindings st env bindings
+       >>= fun (map, scruts, regs, pats) ->
        Env.in_scope_with (fun env -> term_of_expr st env body) map env
-       >>| fun body -> Term.Case(scrut, scruts, [pat, pats, regs, body])
+       >>| fun body -> Term.Case(scruts, [pats, regs, body])
 
     | Ast.Let_rec(bindings, body) ->
        Env.in_scope (fun env ->
@@ -188,7 +188,7 @@ and desugar_rec_bindings self env bindings =
     ) ~init:(Ok []) bindings
   >>| fun bindings -> (env, bindings)
 
-and desugar_let_bindings self env binding bindings =
+and desugar_let_bindings self env bindings =
   let open Result.Monad_infix in
   let f map (pat, expr) =
     pattern_of_ast_pattern self map None pat
@@ -198,7 +198,6 @@ and desugar_let_bindings self env binding bindings =
     (pat, term, map)
   in
   let map = Map.empty (module String) in
-  f map binding >>= fun (pat, scrut, map) ->
   List.fold_right ~f:(fun binding acc ->
       acc >>= fun (map, scruts, pats) ->
       f map binding >>| fun (pat, term, map) ->
@@ -209,4 +208,4 @@ and desugar_let_bindings self env binding bindings =
     Map.fold ~f:(fun ~key:_ ~data:reg acc ->
         Set.add acc reg
       ) ~init:(Set.empty (module Register)) map
-  in (map, scrut, scruts, regs, pat, pats)
+  in (map, scruts, regs, pats)

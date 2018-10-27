@@ -26,7 +26,7 @@ and 'a expr' =
   | App of 'a expr * 'a expr
   | Case of 'a expr * ('a pattern * 'a expr) list
   | Lam of 'a lambda_case * 'a lambda_case list
-  | Let of ('a pattern * 'a expr) * ('a pattern * 'a expr) list * 'a expr
+  | Let of ('a pattern * 'a expr) list * 'a expr
   | Let_rec of (string * 'a expr) list * 'a expr
   | Lit of Literal.t
   | Var of qual_id
@@ -38,7 +38,7 @@ type 'a adt =
   ; constrs : (string * 'a monotype list) list }
 
 type 'a item =
-  | Let of ('a pattern * 'a expr) * ('a pattern * 'a expr) list
+  | Let of ('a pattern * 'a expr) list
   | Let_rec of (string * 'a expr) list
   | Type of 'a adt * 'a adt list
 

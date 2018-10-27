@@ -2,8 +2,7 @@ open Base
 
 type command =
   | Let of
-      Lambda.t
-      * Lambda.t list
+      Lambda.t list
       * int Pattern.decision_tree
       * (Register.t, Register.comparator_witness) Set.t
   | Let_rec of (Register.t * Lambda.t) list
@@ -51,12 +50,9 @@ let export self env exports =
 let compile_item self env commands item ~cont =
   let open Result.Monad_infix in
   match item with
-  | Ast.Let(binding, bindings) ->
-     Desugar.desugar_let_bindings self.desugarer env binding bindings
-     >>= fun (map, scrut, scruts, regs, pat, pats) ->
-     Typecheck.in_new_level (fun checker ->
-         Typecheck.infer_term checker scrut
-       ) self.typechecker >>= fun scrut ->
+  | Ast.Let bindings ->
+     Desugar.desugar_let_bindings self.desugarer env bindings
+     >>= fun (map, scruts, regs, pats) ->
      List.fold_right ~f:(fun scrut acc ->
          acc >>= fun list ->
          Typecheck.in_new_level (fun checker ->
@@ -64,9 +60,9 @@ let compile_item self env commands item ~cont =
            ) self.typechecker >>| fun expr ->
          expr::list
        ) ~init:(Ok []) scruts >>= fun scruts ->
-     Typecheck.infer_branch self.typechecker scrut scruts pat pats >>= fun () ->
+     Typecheck.infer_branch self.typechecker scruts pats >>= fun () ->
      let matrix =
-       [ { Pattern.patterns = pat::pats
+       [ { Pattern.patterns = pats
          ; bindings = Map.empty (module Register)
          ; action = 0 } ]
      in
@@ -74,7 +70,7 @@ let compile_item self env commands item ~cont =
        (let (occurrences, _) =
           List.fold ~f:(fun (list, i) _ ->
               ((Pattern.Nil i)::list, i + 1)
-            ) ~init:([], 0) (scrut::scruts)
+            ) ~init:([], 0) scruts
         in occurrences) matrix >>= fun decision_tree ->
      Map.fold ~f:(fun ~key:key ~data:data acc ->
          acc >>= fun env ->
@@ -83,7 +79,7 @@ let compile_item self env commands item ~cont =
          | None -> Error (Sequence.return (Message.Redefined_name key))
        ) ~init:(Ok env) map
      >>= fun env ->
-     cont env ((Let(scrut, scruts, decision_tree, regs))::commands)
+     cont env ((Let(scruts, decision_tree, regs))::commands)
 
   | Ast.Let_rec bindings ->
      Desugar.desugar_rec_bindings self.desugarer env bindings
@@ -132,8 +128,8 @@ let compile_items self env items exports =
        (* The accumulator is a function *)
        List.fold ~f:(fun callback next self ->
            match next with
-           | Let(scrut, scruts, tree, bindings) ->
-              Bytecode.compile_case self.bytecomp scrut scruts tree
+           | Let(scruts, tree, bindings) ->
+              Bytecode.compile_case self.bytecomp scruts tree
                 [bindings, ()] (fun () -> callback self)
            | Let_rec(bindings) ->
               Bytecode.compile_letrec self.bytecomp bindings

@@ -349,11 +349,8 @@ let rec infer_term checker =
      | (err, Ok _) | (Ok _, err) -> err
      end
 
-  | Term.Case(scrutinee, scrutinees, cases) ->
+  | Term.Case(scrutinees, cases) ->
      let out_ty = fresh_tvar checker in
-     in_new_level (fun checker ->
-         infer_term checker scrutinee
-       ) checker >>= fun scrut ->
      List.fold_right ~f:(fun scrutinee acc ->
          acc >>= fun list ->
          in_new_level (fun checker ->
@@ -361,13 +358,13 @@ let rec infer_term checker =
            ) checker >>| fun expr ->
          expr::list
        ) ~init:(Ok []) scrutinees >>= fun scruts ->
-     List.fold_right ~f:(fun (pat, pats, regs, consequent) acc ->
+     List.fold_right ~f:(fun (pats, regs, consequent) acc ->
          acc >>= fun (idx, matrix, branches) ->
-         infer_branch checker scrut scruts pat pats >>= fun () ->
+         infer_branch checker scruts pats >>= fun () ->
          infer_term checker consequent >>= fun consequent ->
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
          ( idx - 1
-         , { Pattern.patterns = pat::pats
+         , { Pattern.patterns = pats
            ; bindings = Map.empty (module Register)
            ; action = idx }::matrix
          , (regs, consequent)::branches )
@@ -377,11 +374,11 @@ let rec infer_term checker =
        (let (occurrences, _) =
           List.fold ~f:(fun (list, i) _ ->
               ((Pattern.Nil i)::list, i + 1)
-            ) ~init:([], 0) (scrutinee::scrutinees)
+            ) ~init:([], 0) scrutinees
         in occurrences)
        matrix >>| fun decision_tree ->
      { Lambda.ty = out_ty
-     ; expr = Lambda.Case(scrut, scruts, decision_tree, branches) }
+     ; expr = Lambda.Case(scruts, decision_tree, branches) }
 
   | Term.Extern_var(id, ty) ->
      Ok Lambda.{ ty = inst checker ty; expr = Lambda.Extern_var id }
@@ -428,7 +425,7 @@ let rec infer_term checker =
         Ok Lambda.{ ty = inst checker ty; expr = Lambda.Local_var reg }
      | None -> Error (Sequence.return (Message.Unreachable "Tc expr var"))
 
-and infer_branch checker scrut scruts pat pats =
+and infer_branch checker scruts pats =
   let open Result.Monad_infix in
   let rec f scruts pats =
     match scruts, pats with
@@ -439,9 +436,6 @@ and infer_branch checker scrut scruts pat pats =
        >>= fun () ->
        f scruts pats
   in
-  in_new_level (fun _ ->
-      infer_pattern checker (gen checker scrut.Lambda.ty) pat
-    ) checker >>= fun () ->
   in_new_level (fun _ ->
       f scruts pats
     ) checker

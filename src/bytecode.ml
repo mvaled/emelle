@@ -21,8 +21,8 @@ and instr =
   | Box of operand list
   | Call of operand * operand * operand array
     (** proc, first arg, rest args *)
-  | Case of operand * operand list * decision_tree * instr array
-    (** first discr, rest discrs, decision tree, jump table *)
+  | Case of operand list * decision_tree * instr array
+    (** discrs, decision tree, jump table *)
   | Fun of proc
   | Load of operand
   | Local of instr * instr
@@ -138,49 +138,47 @@ and flatten_app self (args : operand list) (f : Lambda.t) (x : operand) =
    over ['a], but it is in a let-rec that would force the ['a] to not get
    universally quantified if inferred. *)
 and compile_case
-    : 'a . t -> Lambda.t -> Lambda.t list -> int Pattern.decision_tree
+    : 'a . t -> Lambda.t list -> int Pattern.decision_tree
       -> ((Register.t, Register.comparator_witness) Set.t * 'a) list
       -> ('a -> (instr, Message.error Sequence.t) Result.t)
       -> (instr, Message.error Sequence.t) Result.t
-  = fun self scrut scruts tree branches f ->
+  = fun self scruts tree branches f ->
   let open Result.Monad_infix in
-  operand_of_lambdacode self scrut ~cont:(fun scrut ->
-      let rec loop list = function
-        | scrut::scruts ->
-           operand_of_lambdacode self scrut ~cont:(fun operand ->
-               loop (operand::list) scruts
-             )
-        | [] ->
-           let scruts = List.rev list in
-           List.fold_right ~f:(fun (regs_set, action) acc ->
+  let rec loop list = function
+    | scrut::scruts ->
+       operand_of_lambdacode self scrut ~cont:(fun operand ->
+           loop (operand::list) scruts
+         )
+    | [] ->
+       let scruts = List.rev list in
+       List.fold_right ~f:(fun (regs_set, action) acc ->
+           acc >>= fun list ->
+           Set.fold_right ~f:(fun reg acc ->
                acc >>= fun list ->
-               Set.fold_right ~f:(fun reg acc ->
-                   acc >>= fun list ->
-                   self.frame_offset <- self.frame_offset + 1;
-                   let var = Bound_var self.frame_offset in
-                   match Hashtbl.add self.ctx ~key:reg ~data:var with
-                   | `Duplicate ->
-                      Error (Sequence.return
-                               (Message.Unreachable "bytecode case"))
-                   | `Ok -> Ok (reg::list)
-                 ) ~init:(Ok []) regs_set
-               >>= fun regs_list ->
-               let rec loop = function
-                 | [] -> f action
-                 | _::regs ->
-                    loop regs >>| fun body -> Local(Pop_match, body)
-               in
-               loop regs_list
-               >>| fun instr ->
-               self.frame_offset <- self.frame_offset + Set.length regs_set;
-               instr::list
-             ) ~init:(Ok []) branches
-           >>| fun branches ->
-           let scruts_arr = Array.of_list (scrut::scruts) in
-           let tree = convert_decision_tree self scruts_arr tree in
-           Case(scrut, scruts, tree, Array.of_list branches)
-      in loop [] scruts
-    )
+               self.frame_offset <- self.frame_offset + 1;
+               let var = Bound_var self.frame_offset in
+               match Hashtbl.add self.ctx ~key:reg ~data:var with
+               | `Duplicate ->
+                  Error (Sequence.return
+                           (Message.Unreachable "bytecode case"))
+               | `Ok -> Ok (reg::list)
+             ) ~init:(Ok []) regs_set
+           >>= fun regs_list ->
+           let rec loop = function
+             | [] -> f action
+             | _::regs ->
+                loop regs >>| fun body -> Local(Pop_match, body)
+           in
+           loop regs_list
+           >>| fun instr ->
+           self.frame_offset <- self.frame_offset + Set.length regs_set;
+           instr::list
+         ) ~init:(Ok []) branches
+       >>| fun branches ->
+       let scruts_arr = Array.of_list scruts in
+       let tree = convert_decision_tree self scruts_arr tree in
+       Case(scruts, tree, Array.of_list branches)
+  in loop [] scruts
 
 (** Convert a [Lambda.t] into an [instr]. *)
 and instr_of_lambdacode self lambda =
@@ -188,8 +186,8 @@ and instr_of_lambdacode self lambda =
   match lambda.Lambda.expr with
   | Lambda.App(f, x) ->
      operand_of_lambdacode self x ~cont:(fun x -> flatten_app self [] f x)
-  | Lambda.Case(scrut, scruts, tree, branches) ->
-     compile_case self scrut scruts tree branches (fun lambda ->
+  | Lambda.Case(scruts, tree, branches) ->
+     compile_case self scruts tree branches (fun lambda ->
          instr_of_lambdacode self lambda
        )
   | Lambda.Extern_var _ | Lambda.Local_var _ | Lambda.Lit _ ->
