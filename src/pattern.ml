@@ -147,7 +147,9 @@ let map_regs_to_occs occurrences row =
   let rec helper map occurrences list =
     match occurrences, list with
     | [], [] -> Ok map
-    | [], _::_ | _::_, [] -> Error Sequence.empty
+    | [], _::_ | _::_, [] ->
+       Error (Sequence.return
+                (Message.Unreachable "Mismatched patterns and occurrences"))
     | occ::occs, pat::pats ->
        match pat.reg with
        | None -> helper map occs pats
@@ -182,10 +184,14 @@ let rec decision_tree_of_matrix occurrences =
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
         match default_matrix rows with
-        | None -> Error Sequence.empty
+        | None ->
+           Error (Sequence.return
+                    (Message.Unreachable "No default of empty matrix"))
         | Some default ->
            match swap_occurrences i occurrences with
-           | None -> Error Sequence.empty
+           | None ->
+              Error (Sequence.return
+                       (Message.Unreachable "Pattern idx out of bounds"))
            | Some (first_occ, rest_occs) ->
               let (_, product) = alg.Type.constrs.(i) in
               (* Just like how the matched value is popped off the stack and its
