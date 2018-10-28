@@ -260,74 +260,53 @@ let inst_adt checker adt =
     (Type.of_node (Type.Nominal (checker.package.name, adt.Type.name)))
     adt.Type.typeparams
 
-(** [compare_polytypes equalities t1 t2] where [equalities] is a map from
-    universally quanitifed variables in [t1] to universally quantified variables
-    in [t2] *)
-let rec compare_polytys equalities t1 t2 =
-  let open Result.Monad_infix in
-  match t1.Type.node, t2.Type.node with
-  | Type.App(tcon1, targ1), Type.App(tcon2, targ2) ->
-     compare_polytys equalities tcon1 tcon2 >>= fun () ->
-     compare_polytys equalities targ1 targ2
-  | Type.Nominal n1, Nominal n2 when (Ident.compare n1 n2) = 0 ->
-     Ok ()
-  | Type.Prim p1, Type.Prim p2 when (Type.compare_prim p1 p2) = 0 -> Ok ()
-  | Type.Var tvar1, Type.Var tvar2 ->
-     begin match tvar1.Type.quant, tvar2.Type.quant with
-     | Univ, Exists _ | Exists _, Univ -> Error Sequence.empty
-     | Exists _, Exists _ ->
-        if tvar1.Type.id = tvar2.Type.id then
-          Ok ()
-        else
-          Error Sequence.empty
-     | Univ, Univ ->
-        let tvar3 =
-          Hashtbl.find_or_add equalities tvar1 ~default:(fun () -> tvar2)
-        in
-        if Type.Var.compare tvar3 tvar2 = 0 then
-          Ok ()
-        else
-          Error Sequence.empty
-     end
-  | _ -> Error Sequence.empty
+(** A generalization, then instantiation *)
+let refresh checker ty = (inst checker (gen checker ty))
 
-(** [infer_pattern checker polyty pat] associates [polyty] with [pat]'s register
+(** [infer_pattern checker map ty pat] associates [ty] with [pat]'s register
     if it has any while unifying any type constraints that arise from [pat]. *)
-let rec infer_pattern checker polyty pat =
+let rec infer_pattern checker map ty pat =
   let open Result.Monad_infix in
   let type_binding pat =
     match pat.Pattern.reg with
-    | None -> Ok ()
+    | None -> Ok map
     | Some reg ->
        (* The binding could already exist because of a prior OR pattern
           alternative *)
-       let polyty2 =
-         Hashtbl.find_or_add checker.env reg ~default:(fun () -> polyty)
-       in
-       if phys_equal polyty polyty2 then
-         Ok ()
-       else
-         let equalities = Hashtbl.create (module Type.Var) in
-         compare_polytys equalities polyty polyty2
+       match Map.find map reg with
+       | Some ty2 ->
+          unify_types checker ty ty2 >>| fun () -> map
+       | None ->
+          match Map.add map ~key:reg ~data:ty with
+          | `Ok map -> Ok map
+          | `Duplicate ->
+             Error (Sequence.return (Message.Unreachable "infer_pattern dup"))
   in
   match pat.Pattern.node with
   | Pattern.Con(adt, idx, pats) ->
      let nom_ty = inst_adt checker adt in
-     unify_types checker (inst checker polyty) nom_ty >>= fun () ->
-     type_binding pat >>= fun () ->
+     unify_types checker ty nom_ty >>= fun () ->
+     type_binding pat >>= fun map ->
      let (_, products) = adt.Type.constrs.(idx) in
-     let rec f pats tys =
+     let rec f map pats tys =
        match pats, tys with
-       | [], [] -> Ok ()
+       | [], [] -> Ok map
        | [], _ | _, [] -> Error Sequence.empty
        | pat::pats, ty::tys ->
-          infer_pattern checker ty pat >>= fun () ->
-          f pats tys
-     in f pats products
+          infer_pattern checker map ty pat >>= fun map ->
+          f map pats tys
+     in f map pats products
   | Pattern.Wild -> type_binding pat
   | Pattern.Or(p1, p2) ->
-     infer_pattern checker polyty p1 >>= fun () ->
-     infer_pattern checker polyty p2
+     infer_pattern checker map ty p1 >>= fun map1 ->
+     infer_pattern checker map ty p2 >>= fun map2 ->
+     Map.fold2 map1 map2 ~init:(Ok ()) ~f:(fun ~key:_ ~data acc ->
+         acc >>= fun () ->
+         match data with
+         | `Both(t1, t2) -> unify_types checker t1 t2
+         | _ -> Error (Sequence.return (Message.Unreachable ""))
+       ) >>| fun () ->
+     Map.merge_skewed map1 map ~combine:(fun ~key:_ _ v -> v)
 
 (** [infer_expr typechecker term] infers the type of [term], returning a
     result. *)
@@ -427,17 +406,22 @@ let rec infer_term checker =
 
 and infer_branch checker scruts pats =
   let open Result.Monad_infix in
-  let rec f scruts pats =
+  let rec f map scruts pats =
     match scruts, pats with
-    | [], [] -> Ok ()
+    | [], [] -> Ok map
     | [], _ | _, [] -> Error Sequence.empty
     | scrut::scruts, pat::pats ->
-       infer_pattern checker (gen checker scrut.Lambda.ty) pat
-       >>= fun () ->
-       f scruts pats
+       infer_pattern checker map scrut.Lambda.ty pat
+       >>= fun map ->
+       f map scruts pats
   in
+  let map = Map.empty (module Register) in
   in_new_level (fun _ ->
-      f scruts pats
+      f map scruts pats >>| fun map ->
+      Map.iteri ~f:(fun ~key ~data ->
+          let _ = Hashtbl.add checker.env ~key ~data:(gen checker data) in
+          ()
+        ) map
     ) checker
 
 and infer_rec_bindings checker bindings =
