@@ -90,6 +90,19 @@ let rec term_of_expr st env (ann, node) =
          ) ~init:(Ok []) cases >>| fun cases ->
        Term.Case([scrutinee], cases)
 
+    | Ast.Constr path ->
+       begin match path with
+       | Ast.Internal name ->
+          begin match Package.find_adt st.package name with
+          | Some (adt, idx) -> Ok (Term.Constr(adt, idx))
+          | None -> Error (Sequence.return (Message.Unresolved_path path))
+          end
+       | Ast.External _ ->
+          match find Package.find_adt st path with
+          | Some (_, (adt, idx)) -> Ok (Term.Constr(adt, idx))
+          | None -> Error (Sequence.return (Message.Unresolved_path path))
+       end
+
     | Ast.Lam((_, patterns, _) as case, cases) ->
        let reg = fresh_register st None in
        let regs = List.map ~f:(fun _ -> fresh_register st None) patterns in

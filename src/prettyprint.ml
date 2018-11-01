@@ -65,8 +65,13 @@ let print_error pp e =
   | Message.Abstract_type id ->
      Buffer.add_string pp.buffer "Abstract type ";
      print_ident pp id
+  | Message.Type_unification_fail(t1, t2) ->
+     Buffer.add_string pp.buffer "Type unification fail: ";
+     print_type pp (-1) t1;
+     Buffer.add_string pp.buffer " and ";
+     print_type pp (-1) t2
   | Message.Unreachable str ->
-     Buffer.add_string pp.buffer "Unreachable";
+     Buffer.add_string pp.buffer "Unreachable ";
      Buffer.add_string pp.buffer str
   | Message.Unresolved_id id ->
      Buffer.add_string pp.buffer "Unresolved id ";

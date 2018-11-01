@@ -25,6 +25,7 @@ type 'a expr = 'a * 'a expr'
 and 'a expr' =
   | App of 'a expr * 'a expr
   | Case of 'a expr * ('a pattern * 'a expr) list
+  | Constr of qual_id
   | Lam of 'a lambda_case * 'a lambda_case list
   | Let of ('a pattern * 'a expr) list * 'a expr
   | Let_rec of (string * 'a expr) list * 'a expr

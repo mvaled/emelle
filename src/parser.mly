@@ -139,6 +139,7 @@ expr_app:
 
 expr_atom:
   | qual_lid { (($symbolstartpos, $endpos), Ast.Var $1) }
+  | qual_uid { (($symbolstartpos, $endpos), Ast.Constr $1) }
   | FLOAT_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.Float $1)) }
   | INT_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.Int $1)) }
   | STRING_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.String $1)) }

@@ -85,12 +85,23 @@ let fresh_var vargen quant kind =
   vargen := !vargen + 1;
   { id = !vargen - 1; ty = None; quant; kind = kind }
 
+let of_node node =
+  let level =
+    match node with
+    | App(f, x) -> max f.level x.level
+    | Var var -> level_of_quant var.quant
+    | _ -> -1
+  in { level; node }
+
+let arrow l r =
+  let arrow = { level = -1; node = Prim Arrow } in
+  let ty = { level = l.level; node = App(arrow, l) } in
+  { level = max l.level r.level; node = App(ty, r) }
+
+
 (** [with_params ty \[a; b; ...; z\]] is (... ((ty a) b) ...z) *)
 let with_params ty =
-  List.fold
-    ~f:(fun acc param ->
-      { level = max acc.level param.level; node = App(acc, param) }
-    ) ~init:ty
+  List.fold ~f:(fun acc param -> of_node (App(acc, param))) ~init:ty
 
 (** [curry \[a; b; ...; z\] ty] is a -> b -> ... z -> ty.
     [curry \[\] ty] is ty. *)
@@ -99,19 +110,14 @@ let rec curry input_tys output_ty =
   | [] -> output_ty
   | (ty::tys) ->
      let out_ty = curry tys output_ty in
-     { level = max ty.level out_ty.level
-     ; node = App
-                ( { level = ty.level
-                  ; node = App({ level = ty.level; node = Prim Arrow}, ty) }
-              , out_ty) }
+     arrow ty out_ty
 
 (** Given an ADT and one of its constructors, return the constructor's type *)
 let type_of_constr ident adt constr =
   let _, product = adt.constrs.(constr) in
   let output_ty =
-    with_params
-      { level = -1; node = Nominal ident }
-      (List.map ~f:(fun x -> { level = -1; node = Var x}) adt.typeparams)
+    with_params (of_node (Nominal ident))
+      (List.map ~f:(fun x -> of_node (Var x)) adt.typeparams)
   in curry product output_ty
 
 let kind_of_adt adt =
@@ -140,16 +146,3 @@ let rec occurs tvar ty =
           );
           false
      )
-
-let of_node node =
-  let level =
-    match node with
-    | App(f, x) -> max f.level x.level
-    | Var var -> level_of_quant var.quant
-    | _ -> -1
-  in { level; node }
-
-let arrow l r =
-  let arrow = { level = -1; node = Prim Arrow } in
-  let ty = { level = l.level; node = App(arrow, l) } in
-  { level = max l.level r.level; node = App(ty, r) }

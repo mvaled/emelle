@@ -150,7 +150,7 @@ let rec normalize checker tvars (_, node) =
      | Some tvar -> Ok tvar
      | None -> Error (Sequence.return (Message.Unresolved_typevar name))
 
-(** Convert an Ast.adt into a Type.adt *)
+(** Convert an [Ast.adt] into a [Type.adt] *)
 let type_adt_of_ast_adt checker adt =
   let open Result.Monad_infix in
   let tvar_map = Hashtbl.create (module String) in
@@ -181,8 +181,8 @@ let type_adt_of_ast_adt checker adt =
              ty::list
            ) ~init:(Ok []) product
          >>| fun product ->
-         ((name, product)::list, idx + 1)
-    ) ~init:(Ok ([], 0)) adt.Ast.constrs
+         ((name, product)::list, idx - 1)
+    ) ~init:(Ok ([], List.length adt.Ast.constrs - 1)) adt.Ast.constrs
   >>| fun (constrs, _) ->
   let constrs = Array.of_list constrs in
   { Type.name = adt.Ast.name
@@ -358,6 +358,14 @@ let rec infer_term checker =
        matrix >>| fun decision_tree ->
      { Lambda.ty = out_ty
      ; expr = Lambda.Case(scruts, decision_tree, branches) }
+
+  | Term.Constr(adt, idx) ->
+     let _, product = adt.Type.constrs.(idx) in
+     let ty =
+       Type.type_of_constr ((checker.package.name, adt.Type.name)) adt idx
+     in
+     Ok Lambda.{ ty = inst checker ty
+               ; expr = Lambda.Constr(List.length product) }
 
   | Term.Extern_var(id, ty) ->
      Ok Lambda.{ ty = inst checker ty; expr = Lambda.Extern_var id }

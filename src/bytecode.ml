@@ -13,6 +13,7 @@ and decision_tree =
 
 and operand =
   | Bound_var of int (** On the stack frame *)
+  | Cons of int
   | Extern_var of Ident.t
   | Free_var of int (** In the proc's environment *)
   | Lit of Literal.t
@@ -190,7 +191,7 @@ and instr_of_lambdacode self lambda =
      compile_case self scruts tree branches (fun lambda ->
          instr_of_lambdacode self lambda
        )
-  | Lambda.Extern_var _ | Lambda.Local_var _ | Lambda.Lit _ ->
+  | Lambda.Constr _ | Lambda.Extern_var _ | Lambda.Local_var _ | Lambda.Lit _ ->
      operand_of_lambdacode self lambda ~cont:(fun operand -> Ok (Load operand))
   | Lambda.Lam(reg, body) ->
      let st =
@@ -243,6 +244,7 @@ and compile_letrec self bindings f =
 and operand_of_lambdacode self lambda ~cont =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with
+  | Lambda.Constr size -> cont (Cons size)
   | Lambda.Extern_var id -> cont (Extern_var id)
   | Lambda.Lit lit -> cont (Lit lit)
   | Lambda.Local_var reg ->

@@ -100,7 +100,36 @@ let tests =
   ; "() type Bar = Bar Foo and Foo = Foo"
   ; "() type List a = Nil | Cons a (List a)"
   ; "(id, id2, id3) let rec id = fun x -> x and id2 = id let id3 = id2 id id2"
-  ; "(id, id2) let id = fun x -> x let id2 = id id" ]
+  ; "(id, id2) let id = fun x -> x let id2 = id id"
+  ; "() type Unit = Unit let unit = Unit"
+  ; "() type Option a = None | Some a let return = Some"
+  ; "() type Option a = None | Some a let return = fun a -> Some a"
+  ; "() type Either e a = Left e | Right a let return = Right"
+  ; {|(map)
+      type Option a = None | Some a
+      let one =
+        case Some 1 with
+          Some x -> x
+        | None -> 0
+
+      let map = fun f opt ->
+        case opt with
+          Some a -> Some (f a)
+        | None -> None
+
+      let bind = fun opt f ->
+        case opt with
+        | Some a -> f a
+        | None -> None
+    |}
+  ; {|(x)
+      type Either e a = Left e | Right a
+      let x =
+        case Left 1 with
+        | Left _ -> 0
+        | Right x -> x
+     |}
+  ; "() type Product a b = Pair a * b let mkPair = fun x y -> Pair x y" ]
 
 let _ =
   List.iter ~f:(fun test ->

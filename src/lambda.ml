@@ -8,6 +8,7 @@ type t = {
 and expr =
   | App of t * t
   | Case of t list * int Pattern.decision_tree * (bindings * t) list
+  | Constr of int
   | Extern_var of Ident.t
   | Lam of Register.t * t
   | Let_rec of (Register.t * t) list * t
