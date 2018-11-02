@@ -66,7 +66,7 @@ let find_adt pats =
     | [] -> None
     | {node = Con(adt, _, _); _}::_ -> Some (adt, i)
     | {node = Wild; _ }::xs -> f (i + 1) xs
-    | {node = Or(p1, p2); _}::_ ->
+    | {node = Or(p1, p2); _}::pats ->
        match f i (p1::pats) with
        | Some x -> Some x
        | None ->
@@ -77,7 +77,7 @@ let find_adt pats =
 
 (** Specialize operation as described in Compiling Pattern Matching to Good
     Decision Trees *)
-let rec specialize constr count occurrence rows =
+let rec specialize constr product occurrence rows =
   let open Option.Monad_infix in
   let helper row rows =
     match row.patterns with
@@ -88,10 +88,9 @@ let rec specialize constr count occurrence rows =
          | None -> row.bindings
          | Some reg -> Map.set row.bindings ~key:reg ~data:occurrence
        in
-       (* Anamorphism over lists, catamorphism over the natural numbers *)
-       let rec ana coacc next = function
-         | 0 -> coacc
-         | n -> next::(ana coacc next (n - 1))
+       let rec fill acc next = function
+         | [] -> acc
+         | _::xs -> fill (next::acc) next xs
        in
        match first_pat.node with
        | Con(_, id, cpats) when id = constr ->
@@ -102,15 +101,15 @@ let rec specialize constr count occurrence rows =
        | Wild ->
           Some ({ row with
                   patterns =
-                    ana row.patterns { node = Wild; reg = None } count
+                    fill rest_pats { node = Wild; reg = None } product
                 ; bindings }::rows)
        | Or(p1, p2) ->
-          specialize constr count occurrence
+          specialize constr product occurrence
             [{ row with
                patterns = p1::rest_pats
              ; bindings }]
           >>= fun mat1 ->
-          specialize constr count occurrence
+          specialize constr product occurrence
             [{ row with
                patterns = p2::rest_pats
              ; bindings }]
@@ -147,9 +146,10 @@ let map_regs_to_occs occurrences row =
   let rec helper map occurrences list =
     match occurrences, list with
     | [], [] -> Ok map
-    | [], _::_ | _::_, [] ->
-       Error (Sequence.return
-                (Message.Unreachable "Mismatched patterns and occurrences"))
+    | [], _::_ ->
+       Error (Sequence.return (Message.Unreachable "Too many patterns"))
+    | _::_, [] ->
+       Error (Sequence.return (Message.Unreachable "Too many occurrences"))
     | occ::occs, pat::pats ->
        match pat.reg with
        | None -> helper map occs pats
@@ -174,7 +174,7 @@ let rec decision_tree_of_matrix occurrences =
   let open Result.Monad_infix in
   function
   | [] -> Ok Fail (* Case 1 *)
-  | (row::rows') as rows ->
+  | (row::_) as rows ->
      match find_adt row.patterns with
      | None ->
         (* Case 2 *)
@@ -183,35 +183,38 @@ let rec decision_tree_of_matrix occurrences =
      | Some(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
-        match default_matrix rows with
-        | None ->
-           Error (Sequence.return
-                    (Message.Unreachable "No default of empty matrix"))
-        | Some default ->
-           match swap_occurrences i occurrences with
+        match swap_column i rows with
+        | None -> Error Sequence.empty
+        | Some rows ->
+           match default_matrix rows with
            | None ->
               Error (Sequence.return
-                       (Message.Unreachable "Pattern idx out of bounds"))
-           | Some (first_occ, rest_occs) ->
-              let (_, product) = alg.Type.constrs.(i) in
-              (* Just like how the matched value is popped off the stack and its
-                 children pushed on the stack, pop off the selected occurrence
-                 and push occurrences for its subterms *)
-              let rec push_occs rest idx = function
-                | [] -> rest
-                | _::xs -> (Cons(idx, first_occ))::(push_occs rest (idx + 1) xs)
-              in
-              let pushed_occs = push_occs rest_occs 0 product in
-              match swap_column i rows' with
-              | None -> Error Sequence.empty
-              | Some rows ->
-                 Array.foldi ~f:(fun id acc (_, products) ->
+                       (Message.Unreachable "No default of empty matrix"))
+           | Some default ->
+              match swap_occurrences i occurrences with
+              | None ->
+                 Error (Sequence.return (Message.Unreachable (String.concat
+                   ["Pattern idx out of bounds: "; Int.to_string i]
+                 )))
+              | Some (first_occ, rest_occs) ->
+                 Array.foldi ~f:(fun id acc (_, product) ->
                      acc >>= fun () ->
+                     (* Just like how the matched value is popped off the stack
+                        and its children pushed on the stack, pop off the
+                        selected occurrence and push occurrences for its
+                        subterms *)
+                     let rec push_occs rest idx = function
+                       | [] -> rest
+                       | _::xs ->
+                          (Cons(idx, first_occ))::(push_occs rest (idx + 1) xs)
+                     in
+                     let pushed_occs = push_occs rest_occs 0 product in
                      match
-                       specialize id (List.length products) first_occ rows
+                       specialize id product first_occ rows
                      with
-                     | None -> Error Sequence.empty
-                     | Some [] -> Ok ()
+                     | None ->
+                        Error (Sequence.return
+                                 (Message.Unreachable "dec tree 1"))
                      | Some matrix ->
                         match decision_tree_of_matrix pushed_occs matrix with
                         | Ok tree ->

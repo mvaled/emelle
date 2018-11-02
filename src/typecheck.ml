@@ -291,7 +291,8 @@ let rec infer_pattern checker map ty pat =
      let rec f map pats tys =
        match pats, tys with
        | [], [] -> Ok map
-       | [], _ | _, [] -> Error Sequence.empty
+       | [], _ | _, [] ->
+          Error (Sequence.return (Message.Unreachable "infer_pattern f"))
        | pat::pats, ty::tys ->
           infer_pattern checker map ty pat >>= fun map ->
           f map pats tys
@@ -304,7 +305,7 @@ let rec infer_pattern checker map ty pat =
          acc >>= fun () ->
          match data with
          | `Both(t1, t2) -> unify_types checker t1 t2
-         | _ -> Error (Sequence.return (Message.Unreachable ""))
+         | _ -> Error (Sequence.return (Message.Unreachable "f"))
        ) >>| fun () ->
      Map.merge_skewed map1 map ~combine:(fun ~key:_ _ v -> v)
 
@@ -417,7 +418,8 @@ and infer_branch checker scruts pats =
   let rec f map scruts pats =
     match scruts, pats with
     | [], [] -> Ok map
-    | [], _ | _, [] -> Error Sequence.empty
+    | [], _ | _, [] ->
+       Error (Sequence.return (Message.Unreachable "infer_branch"))
     | scrut::scruts, pat::pats ->
        infer_pattern checker map scrut.Lambda.ty pat
        >>= fun map ->

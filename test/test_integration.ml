@@ -121,6 +121,10 @@ let tests =
         case opt with
         | Some a -> f a
         | None -> None
+
+      let flatten = fun
+        | (Some (Some a)) -> Some a
+        | _ -> None
     |}
   ; {|(x)
       type Either e a = Left e | Right a

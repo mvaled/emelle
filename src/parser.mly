@@ -147,7 +147,7 @@ expr_atom:
   ;
 
 pattern:
-  | qual_uid nonempty_list(pattern) {
+  | qual_uid nonempty_list(pattern_2) {
         (($symbolstartpos, $endpos), Ast.Con($1, $2))
       }
   | pattern_2 { $1 }
