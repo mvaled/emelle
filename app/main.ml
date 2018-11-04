@@ -14,9 +14,9 @@ let () =
     let result = Desugar.term_of_expr desugarer env ast in
     result >>= fun term ->
     let typechecker = Typecheck.create package packages in
-    Typecheck.infer_term typechecker term
+    Typecheck.infer_term typechecker (-1) term
     >>| fun lambda ->
-    Typecheck.gen typechecker lambda.Lambda.ty
+    Typecheck.gen typechecker (-1) lambda.Lambda.ty
   with
   | Ok ty ->
      let pprinter = Prettyprint.create () in
