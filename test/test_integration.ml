@@ -88,7 +88,8 @@ let test (input, phase) =
   next >>= fun next ->
   let typechecker = Typecheck.create package packages in
   let next =
-    test_phase (Typecheck.infer_term typechecker) Typecheck input next phase
+    test_phase (Typecheck.infer_term typechecker (-1))
+      Typecheck input next phase
   in next
 
 let _ = List.map ~f:test tests
@@ -149,7 +150,20 @@ let tests =
       let id2 = id id id
 
       let id3 = const undefined id
-     |}]
+     |}
+  ; {|()
+      type Option a = None | Some a
+
+      let _ =
+        let r = ref None in
+        r := Some 0
+
+      let make_ref = fun x -> ref x
+
+      let str_ref = make_ref ""
+
+      let int_ref = make_ref 0
+     |} ]
 
 let _ =
   List.iter ~f:(fun test ->

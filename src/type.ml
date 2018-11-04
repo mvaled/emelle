@@ -24,21 +24,16 @@ let compare_quant l r =
   | Exists _, Univ -> -1
   | Exists l, Exists r -> Int.compare l r
 
-(** The level of [Univ] is [-1]; the level of [Exists level] is [level]. *)
-let level_of_quant = function
-  | Univ -> -1
-  | Exists level -> level
-
 (** Returns the greater of two ints. *)
 let max l r =
-  if l < r then
+  if (compare_quant l r) = -1 then
     r
   else
     l
 
 (** Each type is annotated with the greatest level of its children. *)
 type t =
-  { mutable level : int
+  { mutable level : quant
   ; node : t' }
 [@@deriving sexp]
 and t' =
@@ -90,12 +85,12 @@ let of_node node =
   let level =
     match node with
     | App(f, x) -> max f.level x.level
-    | Var var -> level_of_quant var.quant
-    | _ -> -1
+    | Var var -> var.quant
+    | _ -> Univ
   in { level; node }
 
 let arrow l r =
-  let arrow = { level = -1; node = Prim Arrow } in
+  let arrow = { level = Univ; node = Prim Arrow } in
   let ty = { level = l.level; node = App(arrow, l) } in
   { level = max l.level r.level; node = App(ty, r) }
 
@@ -128,22 +123,19 @@ let kind_of_adt adt =
     in [ty]. It ignores universally quantified type variables and adjusts the
     levels of unassigned typevars when necessary. *)
 let rec occurs tvar ty =
-  match tvar.quant with
-  | Univ -> false
-  | Exists level ->
-     if ty.level < level then
+  if (compare_quant ty.level tvar.quant) = -1 then
+    false
+  else (
+    ty.level <- tvar.quant;
+    match ty.node with
+    | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
+    | Nominal _ -> false
+    | Prim _ -> false
+    | Var { id; _ } when id = tvar.id -> true
+    | Var { ty = Some ty; _ } -> occurs tvar ty
+    | Var tvar2 ->
+       if (compare_quant tvar2.quant tvar.quant) = 1 then (
+         tvar2.quant <- tvar.quant
+       );
        false
-     else (
-       ty.level <- level;
-       match ty.node with
-       | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
-       | Nominal _ -> false
-       | Prim _ -> false
-       | Var { id; _ } when id = tvar.id -> true
-       | Var { ty = Some ty; _ } -> occurs tvar ty
-       | Var tvar2 ->
-          if (level_of_quant tvar2.quant) > level then (
-            tvar2.quant <- Exists level
-          );
-          false
-     )
+  )
