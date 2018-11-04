@@ -22,6 +22,7 @@
 %token BAR
 %token COLON
 %token COLONCOLON
+%token COLONEQUALS
 %token COMMA
 %token DOT
 %token EQUALS
@@ -138,7 +139,14 @@ rec_binding:
   ;
 
 expr_seq:
-  | expr_app SEMICOLON expr { (($symbolstartpos, $endpos), Ast.Seq($1, $3)) }
+  | expr_assn SEMICOLON expr { (($symbolstartpos, $endpos), Ast.Seq($1, $3)) }
+  | expr_assn { $1 }
+  ;
+
+expr_assn:
+  | expr_app COLONEQUALS expr_assn {
+       (($symbolstartpos, $endpos), Ast.Assign($1, $3))
+    }
   | expr_app { $1 }
   ;
 

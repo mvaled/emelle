@@ -19,6 +19,7 @@ and operand =
   | Lit of Literal.t
 
 and instr =
+  | Assign of operand * operand
   | Box of operand list
   | Call of operand * operand * operand array
     (** proc, first arg, rest args *)
@@ -189,6 +190,12 @@ and instr_of_lambdacode self lambda =
   match lambda.Lambda.expr with
   | Lambda.App(f, x) ->
      operand_of_lambdacode self x ~cont:(fun x -> flatten_app self [] f x)
+  | Lambda.Assign(lhs, rhs) ->
+     operand_of_lambdacode self lhs ~cont:(fun lhs ->
+         operand_of_lambdacode self rhs ~cont:(fun rhs ->
+             Ok (Assign(lhs, rhs))
+           )
+       )
   | Lambda.Case(scruts, tree, branches) ->
      compile_case self scruts tree branches (fun lambda ->
          instr_of_lambdacode self lambda

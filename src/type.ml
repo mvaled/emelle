@@ -5,6 +5,7 @@ type prim =
   | Char
   | Float
   | Int
+  | Ref
   | String
 [@@deriving compare, sexp]
 

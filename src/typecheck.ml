@@ -70,6 +70,7 @@ let rec kind_of_type checker ty =
   | Type.Prim Type.Char -> Ok Kind.Mono
   | Type.Prim Type.Float -> Ok Kind.Mono
   | Type.Prim Type.Int -> Ok Kind.Mono
+  | Type.Prim Type.Ref -> Ok (Kind.Poly(Kind.Mono, Kind.Mono))
   | Type.Prim Type.String -> Ok Kind.Mono
   | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
   | Type.Var { ty = None; kind; _ } -> Ok kind
@@ -346,6 +347,16 @@ let rec infer_term checker =
      | (Error f_err, Error x_err) -> Error (Sequence.append f_err x_err)
      | (err, Ok _) | (Ok _, err) -> err
      end
+
+  | Term.Assign(lval, rval) ->
+     infer_term checker lval >>= fun lval ->
+     infer_term checker rval >>= fun rval ->
+     unify_types checker
+       lval.Lambda.ty
+       (Type.of_node (Type.App( Type.of_node (Type.Prim Type.Ref)
+                              , rval.Lambda.ty )
+       )) >>| fun () ->
+     Lambda.{ ty = rval.Lambda.ty; expr = Lambda.Assign(lval, rval) }
 
   | Term.Case(scrutinees, cases) ->
      let out_ty = fresh_tvar checker in

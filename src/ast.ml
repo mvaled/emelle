@@ -24,6 +24,7 @@ and 'a pattern' =
 type 'a expr = 'a * 'a expr'
 and 'a expr' =
   | App of 'a expr * 'a expr
+  | Assign of 'a expr * 'a expr
   | Case of 'a expr * ('a pattern * 'a expr) list
   | Constr of qual_id
   | Lam of 'a lambda_case * 'a lambda_case list

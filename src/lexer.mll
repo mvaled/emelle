@@ -42,6 +42,7 @@ rule expr = parse
   | '|' { BAR }
   | ':' { COLON }
   | "::" { COLONCOLON }
+  | ":=" { COLONEQUALS }
   | ',' { COMMA }
   | '.' { DOT }
   | '=' { EQUALS }

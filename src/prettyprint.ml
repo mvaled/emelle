@@ -47,6 +47,8 @@ let rec print_type pp parent_prec ty =
      Buffer.add_string pp.buffer "Int"
   | Type.Prim Type.Float ->
      Buffer.add_string pp.buffer "Float"
+  | Type.Prim Type.Ref ->
+     Buffer.add_string pp.buffer "Ref";
   | Type.Prim Type.String ->
      Buffer.add_string pp.buffer "String"
   | Type.Var { ty = Some ty; _ } ->

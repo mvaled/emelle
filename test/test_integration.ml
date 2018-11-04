@@ -57,7 +57,8 @@ let tests =
   ; "\"foobar\\\"baz\"", End
   ; "\"Hello world!\\n\"", End
   ; "\"\"", End
-  ; "let f = fun x y -> x; y in f", End]
+  ; "let f = fun x y -> x; y in f", End
+  ; "let assign = fun l r -> l := r in assign", End ]
 
 let test_phase f curr_phase input format phase =
   let result = f format in

@@ -70,6 +70,11 @@ let rec term_of_expr st env (ann, node) =
        | Error e1, Error e2 -> Error (Sequence.append e1 e2)
        end
 
+    | Ast.Assign(lval, rval) ->
+       term_of_expr st env lval >>= fun lval ->
+       term_of_expr st env rval >>| fun rval ->
+       Term.Assign(lval, rval)
+
     | Ast.Case(scrutinee, cases) ->
        term_of_expr st env scrutinee >>= fun scrutinee ->
        List.fold_right
