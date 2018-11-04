@@ -169,6 +169,11 @@ let rec term_of_expr st env (ann, node) =
 
     | Ast.Prim(op, ty) -> Ok (Term.Prim(op, ty))
 
+    | Ast.Seq(s, t) ->
+       term_of_expr st env s >>= fun s ->
+       term_of_expr st env t >>| fun t ->
+       Term.Seq(s, t)
+
     | Ast.Var qual_id ->
        match qual_id with
        | Ast.Internal name -> (* Unqualified name *)

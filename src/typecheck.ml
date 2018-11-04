@@ -429,6 +429,11 @@ let rec infer_term checker =
      type_of_ast_polytype checker ty >>| fun ty ->
      { Lambda.ty = inst checker ty; expr = Lambda.Prim op }
 
+  | Term.Seq(s, t) ->
+     infer_term checker s >>= fun s ->
+     infer_term checker t >>| fun t ->
+     Lambda.{ ty = t.Lambda.ty; expr = Lambda.Seq(s, t) }
+
   | Term.Var reg ->
      match Hashtbl.find checker.env reg with
      | Some ty ->

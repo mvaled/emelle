@@ -25,6 +25,7 @@
 %token COMMA
 %token DOT
 %token EQUALS
+%token SEMICOLON
 %token STAR
 %token UNDERSCORE
 
@@ -117,7 +118,7 @@ expr_kw:
   | LET REC bindings = separated_list(AND, rec_binding) IN body = expr {
         (($symbolstartpos, $endpos), Ast.Let_rec(bindings, body))
       }
-  | expr_app { $1 }
+  | expr_seq { $1 }
   ;
 
 case:
@@ -134,6 +135,11 @@ binding:
 
 rec_binding:
   | LIDENT EQUALS expr { ($1, $3) }
+  ;
+
+expr_seq:
+  | expr_app SEMICOLON expr { (($symbolstartpos, $endpos), Ast.Seq($1, $3)) }
+  | expr_app { $1 }
   ;
 
 expr_app:

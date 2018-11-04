@@ -56,7 +56,8 @@ let tests =
   ; "\"\\\'\"", End
   ; "\"foobar\\\"baz\"", End
   ; "\"Hello world!\\n\"", End
-  ; "\"\"", End ]
+  ; "\"\"", End
+  ; "let f = fun x y -> x; y in f", End]
 
 let test_phase f curr_phase input format phase =
   let result = f format in

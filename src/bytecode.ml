@@ -30,6 +30,7 @@ and instr =
   | Local_rec of instr list * instr
   | Pop_match
   | Prim of string
+  | Seq of instr * instr
 
 and proc = {
     env : operand array; (** The captured variables *)
@@ -218,6 +219,10 @@ and instr_of_lambdacode self lambda =
          instr_of_lambdacode self body
        )
   | Lambda.Prim op -> Ok (Prim op)
+  | Lambda.Seq(s, t) ->
+     instr_of_lambdacode self s >>= fun s ->
+     instr_of_lambdacode self t >>| fun t ->
+     Seq(s, t)
 
 (** This function implements the compilation of a let-rec expression, as used in
     [instr_of_lambdacode]. It is a separate function and takes a function

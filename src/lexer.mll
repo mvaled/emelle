@@ -45,6 +45,7 @@ rule expr = parse
   | ',' { COMMA }
   | '.' { DOT }
   | '=' { EQUALS }
+  | ';' { SEMICOLON }
   | '*' { STAR }
   | '_' { UNDERSCORE }
   | uident as str { UIDENT str }
