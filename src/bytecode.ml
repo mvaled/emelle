@@ -31,6 +31,7 @@ and instr =
   | Local_rec of instr list * instr
   | Pop_match
   | Prim of string
+  | Ref of operand
   | Seq of instr * instr
 
 and proc = {
@@ -226,6 +227,10 @@ and instr_of_lambdacode self lambda =
          instr_of_lambdacode self body
        )
   | Lambda.Prim op -> Ok (Prim op)
+  | Lambda.Ref value ->
+     operand_of_lambdacode self value ~cont:(fun value ->
+         Ok (Ref value)
+       )
   | Lambda.Seq(s, t) ->
      instr_of_lambdacode self s >>= fun s ->
      instr_of_lambdacode self t >>| fun t ->

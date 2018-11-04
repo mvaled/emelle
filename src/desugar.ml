@@ -174,6 +174,10 @@ let rec term_of_expr st env (ann, node) =
 
     | Ast.Prim(op, ty) -> Ok (Term.Prim(op, ty))
 
+    | Ast.Ref value ->
+       term_of_expr st env value >>| fun value ->
+       Term.Ref value
+
     | Ast.Seq(s, t) ->
        term_of_expr st env s >>= fun s ->
        term_of_expr st env t >>| fun t ->

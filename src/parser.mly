@@ -11,6 +11,7 @@
 %token IN
 %token LET
 %token REC
+%token REF
 %token SELF
 %token THEN
 %token TYPE
@@ -119,6 +120,7 @@ expr_kw:
   | LET REC bindings = separated_list(AND, rec_binding) IN body = expr {
         (($symbolstartpos, $endpos), Ast.Let_rec(bindings, body))
       }
+  | REF expr { (($symbolstartpos, $endpos), Ast.Ref $2) }
   | expr_seq { $1 }
   ;
 

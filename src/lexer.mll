@@ -17,6 +17,7 @@
       ; "in", IN
       ; "let", LET
       ; "rec", REC
+      ; "ref", REF
       ; "self", SELF
       ; "then", THEN
       ; "type", TYPE

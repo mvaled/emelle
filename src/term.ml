@@ -12,6 +12,7 @@ type 'a t =
   | Let_rec of 'a bind_group * 'a t
   | Lit of Literal.t
   | Prim of string * 'a Ast.polytype
+  | Ref of 'a t
   | Seq of 'a t * 'a t
   | Var of Register.t
 
