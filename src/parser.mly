@@ -5,6 +5,7 @@
 %token CASE
 %token ELSE
 %token FORALL
+%token FOREIGN
 %token FUN
 %token IF
 %token IN
@@ -103,6 +104,9 @@ expr:
 expr_kw:
   | CASE test = expr WITH option(BAR) cases = separated_list(BAR, case) {
         (($symbolstartpos, $endpos), Ast.Case(test, cases))
+      }
+  | FOREIGN STRING_LIT polytype {
+        (($symbolstartpos, $endpos), Ast.Prim($2, $3))
       }
   | FUN option(BAR) lambda_case list(BAR lambda_case { $2 }) {
         (($symbolstartpos, $endpos), Ast.Lam($3, $4))

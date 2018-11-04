@@ -11,6 +11,7 @@
       ; "case", CASE
       ; "else", ELSE
       ; "forall", FORALL
+      ; "foreign", FOREIGN
       ; "fun", FUN
       ; "if", IF
       ; "in", IN

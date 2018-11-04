@@ -167,6 +167,8 @@ let rec term_of_expr st env (ann, node) =
 
     | Ast.Lit lit -> Ok (Term.Lit lit)
 
+    | Ast.Prim(op, ty) -> Ok (Term.Prim(op, ty))
+
     | Ast.Var qual_id ->
        match qual_id with
        | Ast.Internal name -> (* Unqualified name *)

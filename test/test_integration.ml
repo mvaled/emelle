@@ -133,7 +133,19 @@ let tests =
         | Left _ -> 0
         | Right x -> x
      |}
-  ; "() type Product a b = Pair a * b let mkPair = fun x y -> Pair x y" ]
+  ; "() type Product a b = Pair a * b let mkPair = fun x y -> Pair x y"
+  ; {|(id, const, undefined)
+
+      let id = foreign "id" forall t. t -> t
+
+      let const = foreign "const" forall t u . t -> u -> t
+
+      let undefined = foreign "undefined" forall t. t
+
+      let id2 = id id id
+
+      let id3 = const undefined id
+     |}]
 
 let _ =
   List.iter ~f:(fun test ->

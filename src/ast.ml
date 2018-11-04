@@ -30,6 +30,7 @@ and 'a expr' =
   | Let of ('a pattern * 'a expr) list * 'a expr
   | Let_rec of (string * 'a expr) list * 'a expr
   | Lit of Literal.t
+  | Prim of string * 'a polytype
   | Var of qual_id
 and 'a lambda_case = 'a pattern * 'a pattern list * 'a expr
 

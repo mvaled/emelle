@@ -10,6 +10,7 @@ type 'a t =
   | Let of Register.t * 'a t * 'a t
   | Let_rec of 'a bind_group * 'a t
   | Lit of Literal.t
+  | Prim of string * 'a Ast.polytype
   | Var of Register.t
 
 and 'a bind_group = (Register.t * 'a t) list

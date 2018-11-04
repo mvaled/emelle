@@ -29,6 +29,7 @@ and instr =
   | Local of instr * instr
   | Local_rec of instr list * instr
   | Pop_match
+  | Prim of string
 
 and proc = {
     env : operand array; (** The captured variables *)
@@ -216,6 +217,7 @@ and instr_of_lambdacode self lambda =
      compile_letrec self bindings (fun _ ->
          instr_of_lambdacode self body
        )
+  | Lambda.Prim op -> Ok (Prim op)
 
 (** This function implements the compilation of a let-rec expression, as used in
     [instr_of_lambdacode]. It is a separate function and takes a function

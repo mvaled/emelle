@@ -150,6 +150,24 @@ let rec normalize checker tvars (_, node) =
      | Some tvar -> Ok tvar
      | None -> Error (Sequence.return (Message.Unresolved_typevar name))
 
+let type_of_ast_polytype checker (Ast.Forall(typeparams, body)) =
+  let open Result.Monad_infix in
+  let tvar_map = Hashtbl.create (module String) in
+  List.fold_right ~f:(fun str acc ->
+      acc >>= fun () ->
+      let tvar =
+        Type.fresh_var checker.tvargen Type.Univ
+          (Kind.Var (Kind.fresh_var checker.kvargen))
+      in
+      match
+        Hashtbl.add tvar_map ~key:str ~data:(Type.of_node (Type.Var tvar))
+      with
+      | `Duplicate -> Error (Sequence.return (Message.Redefined_typevar str))
+      | `Ok -> Ok ()
+    ) ~init:(Ok ()) typeparams
+  >>= fun () ->
+  normalize checker tvar_map body
+
 (** Convert an [Ast.adt] into a [Type.adt] *)
 let type_adt_of_ast_adt checker adt =
   let open Result.Monad_infix in
@@ -406,6 +424,10 @@ let rec infer_term checker =
             | Literal.String _ -> Type.of_node (Type.Prim Type.String)
             end
         ; expr = Lambda.Lit lit }
+
+  | Term.Prim(op, ty) ->
+     type_of_ast_polytype checker ty >>| fun ty ->
+     { Lambda.ty = inst checker ty; expr = Lambda.Prim op }
 
   | Term.Var reg ->
      match Hashtbl.find checker.env reg with
