@@ -86,13 +86,16 @@ let compile_item self env commands item ~cont =
      >>= fun (env, bindings) ->
      Typecheck.infer_rec_bindings self.typechecker (-1) bindings
      >>= fun bindings ->
-     List.iter ~f:(fun (lhs, _) ->
-         Hashtbl.change self.typechecker.env lhs ~f:(function
-             | Some ty -> Some (Typecheck.gen self.typechecker (-1) ty)
-             | None -> None
-           )
-       ) bindings;
-     cont env ((Let_rec bindings)::commands)
+     List.fold ~f:(fun acc (lhs, _) ->
+         acc >>= fun () ->
+         match Hashtbl.find self.typechecker.env lhs with
+         | Some ty ->
+            Typecheck.gen self.typechecker (-1) ty >>| fun polyty ->
+            let _ = Hashtbl.set self.typechecker.env ~key:lhs ~data:polyty in
+            ()
+         | None -> Error Sequence.empty
+       ) ~init:(Ok ()) bindings
+     >>= fun () -> cont env ((Let_rec bindings)::commands)
 
   | Ast.Type(adt, adts) ->
      List.fold ~f:(fun acc adt ->

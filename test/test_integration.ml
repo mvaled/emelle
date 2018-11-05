@@ -156,7 +156,8 @@ let tests =
 
       let _ =
         let r = ref None in
-        r := Some 0
+        r := Some 0;
+        r := Some 1
 
       let make_ref = fun x -> ref x
 

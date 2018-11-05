@@ -94,7 +94,6 @@ let arrow l r =
   let ty = { level = l.level; node = App(arrow, l) } in
   { level = max l.level r.level; node = App(ty, r) }
 
-
 (** [with_params ty \[a; b; ...; z\]] is (... ((ty a) b) ...z) *)
 let with_params ty =
   List.fold ~f:(fun acc param -> of_node (App(acc, param))) ~init:ty

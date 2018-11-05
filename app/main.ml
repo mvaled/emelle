@@ -15,7 +15,7 @@ let () =
     result >>= fun term ->
     let typechecker = Typecheck.create package packages in
     Typecheck.infer_term typechecker (-1) term
-    >>| fun lambda ->
+    >>= fun lambda ->
     Typecheck.gen typechecker (-1) lambda.Lambda.ty
   with
   | Ok ty ->

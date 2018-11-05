@@ -34,9 +34,14 @@ let rec unify_kinds l r =
   let open Result.Monad_infix in
   match l, r with
   | Kind.Mono, Kind.Mono -> Ok ()
-  | Kind.Poly(a, b), Kind.Poly(c, d) ->
+  | Kind.Poly(a, g1, b), Kind.Poly(c, g2, d) ->
      unify_kinds a c >>= fun () ->
-     unify_kinds b d
+     unify_kinds b d >>| fun () ->
+     begin match !g1, !g2 with
+     | Kind.Mut, Kind.Const -> g2 := !g1
+     | Kind.Const, Kind.Mut -> g1 := !g2
+     | _ -> ()
+     end
   | Kind.Var { id = l; _ }, Kind.Var { id = r; _ } when l = r -> Ok ()
   | Kind.Var { kind = Some k1; _ }, k2 | k2, Kind.Var { kind = Some k1; _ } ->
      unify_kinds k1 k2
@@ -59,7 +64,8 @@ let rec kind_of_type checker ty =
      kind_of_type checker targ >>= fun argkind ->
      kind_of_type checker tcon >>= fun conkind ->
      let kvar = Kind.Var (Kind.fresh_var checker.kvargen) in
-     unify_kinds conkind (Kind.Poly(argkind, kvar)) >>| fun () ->
+     unify_kinds conkind (Kind.Poly(argkind, ref Kind.Const, kvar))
+     >>| fun () ->
      kvar
   | Type.Nominal id ->
      begin match find Package.kind_of_ident checker id with
@@ -67,11 +73,14 @@ let rec kind_of_type checker ty =
      | None -> Error (Sequence.return (Message.Unresolved_type id))
      end
   | Type.Prim Type.Arrow ->
-     Ok (Kind.Poly(Kind.Mono, Kind.Poly(Kind.Mono, Kind.Mono)))
+     Ok (Kind.Poly
+           ( Kind.Mono
+           , ref Kind.Const
+           , Kind.Poly(Kind.Mono, ref Kind.Const, Kind.Mono)))
   | Type.Prim Type.Char -> Ok Kind.Mono
   | Type.Prim Type.Float -> Ok Kind.Mono
   | Type.Prim Type.Int -> Ok Kind.Mono
-  | Type.Prim Type.Ref -> Ok (Kind.Poly(Kind.Mono, Kind.Mono))
+  | Type.Prim Type.Ref -> Ok (Kind.Poly(Kind.Mono, ref Kind.Mut, Kind.Mono))
   | Type.Prim Type.String -> Ok Kind.Mono
   | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
   | Type.Var { ty = None; kind; _ } -> Ok kind
@@ -221,37 +230,39 @@ let in_new_level f st =
     Universally quantified variables really shouldn't appear in [ty], but the
     function just ignores them. *)
 let gen checker safe_level =
+  let open Result.Monad_infix in
   let map = Hashtbl.create (module Type.Var) in
   let rec helper ty =
     match ty.Type.node with
     | Type.App(tcon, targ) ->
-       (* Generalizing [tcon] before pattern matching on it ensures that the
-          Ref type constructor isn't hidden behind a typevar indirection *)
-       let tcon = helper tcon in
-       let targ =
-         match tcon.Type.node with
-         | Type.Prim Type.Ref ->
-            (* Create a dummy typevar to perform the occurs check and raise the
-               level of the argument of the Ref type constructor to [safe_level]
-               in order to have a sound type system in the presence of refs *)
-            let tvar =
-              Type.fresh_var checker.tvargen (Type.Exists safe_level) Kind.Mono
-            in
-            let _ = Type.occurs tvar targ in
-            targ
-         | _ -> helper targ
-       in
-       Type.of_node (Type.App(tcon, targ))
+       helper tcon >>= fun tcon ->
+       let rec helper2 = function
+         | Kind.Poly(kind, g, _) ->
+            begin match !g with
+            | Kind.Const ->
+               helper targ
+            | Kind.Mut ->
+               let tvar =
+                 Type.fresh_var checker.kvargen (Type.Exists safe_level) kind
+               in
+               let _ = Type.occurs tvar targ in
+               Ok targ
+            end >>| fun targ -> Type.of_node (Type.App(tcon, targ))
+         | Kind.Var { kind = Some kind; _ } ->
+            helper2 kind
+         | _ ->
+            Error (Sequence.return (Message.Unreachable "gen"))
+       in kind_of_type checker tcon >>= helper2
     | Type.Var { ty = Some ty; _ } -> helper ty
     | Type.Var ({ ty = None; quant; kind; _ } as var) ->
        begin match quant with
        | Type.Exists level when level >= checker.level ->
-          Hashtbl.find_or_add map var ~default:(fun () ->
-              Type.of_node
-                (Type.Var (Type.fresh_var checker.tvargen Type.Univ kind)))
-       | _ -> ty
+          Ok (Hashtbl.find_or_add map var ~default:(fun () ->
+                  Type.of_node
+                    (Type.Var (Type.fresh_var checker.tvargen Type.Univ kind))))
+       | _ -> Ok ty
        end
-    | _ -> ty
+    | _ -> Ok ty
   in helper
 
 (** [inst checker polyty] instantiates [polyty] by replacing universally
@@ -428,8 +439,8 @@ let rec infer_term checker safe_level =
      in_new_level (fun checker ->
          infer_term checker safe_level rhs
        ) checker >>= fun rhs ->
-     Hashtbl.add_exn
-       checker.env ~key:lhs ~data:(gen checker safe_level rhs.Lambda.ty);
+     gen checker safe_level rhs.Lambda.ty >>= fun polyty ->
+     Hashtbl.add_exn checker.env ~key:lhs ~data:polyty;
      infer_term checker safe_level body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
 
@@ -437,12 +448,15 @@ let rec infer_term checker safe_level =
      infer_rec_bindings checker safe_level bindings >>= fun bindings ->
      (* In the RHS of let-rec bindings, LHS names aren't quantified. Here,
         quantify them for the let-rec body. *)
-     List.iter ~f:(fun (lhs, _) ->
-         Hashtbl.change checker.env lhs ~f:(function
-             | Some ty -> Some (gen checker safe_level ty)
-             | None -> None
-           )
-       ) bindings;
+     List.fold ~f:(fun acc (lhs, _) ->
+         acc >>= fun () ->
+         match Hashtbl.find checker.env lhs with
+         | None -> Error Sequence.empty
+         | Some ty ->
+            gen checker safe_level ty >>| fun polyty ->
+            Hashtbl.set checker.env ~key:lhs ~data:polyty
+       ) ~init:(Ok ()) bindings
+     >>= fun () ->
      infer_term checker safe_level body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
 
@@ -494,13 +508,13 @@ and infer_branch checker safe_level scruts pats =
   in
   let map = Map.empty (module Register) in
   in_new_level (fun _ ->
-      f map scruts pats >>| fun map ->
-      Map.iteri ~f:(fun ~key ~data ->
-          let _ =
-            Hashtbl.add checker.env ~key ~data:(gen checker safe_level data)
-          in
+      f map scruts pats >>= fun map ->
+      Map.fold ~f:(fun ~key ~data acc ->
+          acc >>= fun () ->
+          gen checker safe_level data >>| fun polyty ->
+          let _ = Hashtbl.set checker.env ~key ~data:polyty in
           ()
-        ) map
+        ) ~init:(Ok ()) map
     ) checker
 
 and infer_rec_bindings checker safe_level bindings =
