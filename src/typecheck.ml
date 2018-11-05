@@ -21,10 +21,8 @@ let create package packages =
   ; kvargen = Kind.create_vargen () }
 
 let fresh_tvar (checker : t) =
-  { Type.level = Type.Exists checker.level
-  ; node =
-      Type.Var
-        (Type.fresh_var checker.tvargen (Type.Exists checker.level) Kind.Mono) }
+  Type.Var
+    (Type.fresh_var checker.tvargen (Type.Exists checker.level) Kind.Mono)
 
 let find f st (pack_name, item_name) =
   match Hashtbl.find st.packages pack_name with
@@ -56,7 +54,7 @@ let rec unify_kinds l r =
     with any errors. *)
 let rec kind_of_type checker ty =
   let open Result.Monad_infix in
-  match ty.Type.node with
+  match ty with
   | Type.App(tcon, targ) ->
      kind_of_type checker targ >>= fun argkind ->
      kind_of_type checker tcon >>= fun conkind ->
@@ -86,29 +84,25 @@ let rec unify_types checker lhs rhs =
     Ok ()
   else
     match lhs, rhs with
-    | Type.{ node = Type.App(lcon, larg); _ },
-      Type.{ node = Type.App(rcon, rarg); _ } ->
+    | Type.App(lcon, larg), Type.App(rcon, rarg) ->
        begin
          match unify_types checker lcon rcon, unify_types checker larg rarg with
          | Ok (), Ok () -> Ok ()
          | Error e, Ok () | Ok (), Error e -> Error e
          | Error e1, Error e2 -> Error (Sequence.append e1 e2)
        end
-    | { node = Type.Nominal lstr; _ },
-      { node = Type.Nominal rstr; _ }
+    | Type.Nominal lstr, Type.Nominal rstr
          when (Ident.compare lstr rstr) = 0 ->
        Ok ()
-    | { node = Type.Prim lprim; _ },
-      { node = Type.Prim rprim; _ }
+    | Type.Prim lprim, Type.Prim rprim
          when Type.equal_prim lprim rprim ->
        Ok ()
-    | { node = Type.Var { id = id1; _ }; _ },
-      { node = Type.Var { id = id2; _ }; _ } when id1 = id2 ->
+    | Type.Var { id = id1; _ }, Type.Var { id = id2; _ } when id1 = id2 ->
        Ok ()
-    | { node = Type.Var { ty = Some ty0; _ }; _ }, ty1
-    | ty0, { node = Type.Var { ty = Some ty1; _ }; _ } ->
+    | Type.Var { ty = Some ty0; _ }, ty1
+    | ty0, Type.Var { ty = Some ty1; _ } ->
        unify_types checker ty0 ty1
-    | { node = Type.Var var; _ }, ty | ty, { node = Type.Var var; _ } ->
+    | Type.Var var, ty | ty, Type.Var var ->
        if Type.occurs var ty then
          Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
        else
@@ -134,10 +128,10 @@ let rec normalize checker tvars (_, node) =
   | Ast.TApp(constr, arg) ->
      normalize checker tvars constr >>= fun constr ->
      normalize checker tvars arg >>| fun arg ->
-     Type.of_node (Type.App(constr, arg))
-  | Ast.TArrow -> Ok (Type.of_node (Type.Prim Type.Arrow))
-  | Ast.TFloat -> Ok (Type.of_node (Type.Prim Type.Float))
-  | Ast.TInt -> Ok (Type.of_node (Type.Prim Type.Int))
+     Type.App(constr, arg)
+  | Ast.TArrow -> Ok (Type.Prim Type.Arrow)
+  | Ast.TFloat -> Ok (Type.Prim Type.Float)
+  | Ast.TInt -> Ok (Type.Prim Type.Int)
   | Ast.TNominal path ->
      let ident =
        match path with
@@ -146,7 +140,7 @@ let rec normalize checker tvars (_, node) =
      in
      begin
        match find Package.find_typedef checker ident with
-       | Some _ -> Ok (Type.of_node (Type.Nominal ident))
+       | Some _ -> Ok (Type.Nominal ident)
        | None -> Error (Sequence.return (Message.Unresolved_path path))
      end
   | Ast.TVar name ->
@@ -163,9 +157,7 @@ let type_of_ast_polytype checker (Ast.Forall(typeparams, body)) =
         Type.fresh_var checker.tvargen Type.Univ
           (Kind.Var (Kind.fresh_var checker.kvargen))
       in
-      match
-        Hashtbl.add tvar_map ~key:str ~data:(Type.of_node (Type.Var tvar))
-      with
+      match Hashtbl.add tvar_map ~key:str ~data:(Type.Var tvar) with
       | `Duplicate -> Error (Sequence.return (Message.Redefined_typevar str))
       | `Ok -> Ok ()
     ) ~init:(Ok ()) typeparams
@@ -183,9 +175,7 @@ let type_adt_of_ast_adt checker adt =
         Type.fresh_var checker.tvargen Type.Univ
           (Kind.Var (Kind.fresh_var checker.kvargen))
       in
-      match
-        Hashtbl.add tvar_map ~key:str ~data:(Type.of_node (Type.Var tvar))
-      with
+      match Hashtbl.add tvar_map ~key:str ~data:(Type.Var tvar) with
       | `Duplicate -> Error (Sequence.return (Message.Redefined_typevar str))
       | `Ok -> Ok (tvar::list)
     ) ~init:(Ok []) adt.Ast.typeparams
@@ -225,13 +215,13 @@ let in_new_safe_level f self =
 let gen checker =
   let map = Hashtbl.create (module Type.Var) in
   let rec helper ty =
-    match ty.Type.node with
+    match ty with
     | Type.App(tcon, targ) ->
        (* Generalizing [tcon] before pattern matching on it ensures that the
           Ref type constructor isn't hidden behind a typevar indirection *)
        let tcon = helper tcon in
        let targ =
-         match tcon.Type.node with
+         match tcon with
          | Type.Prim Type.Ref ->
             (* Create a dummy typevar to perform the occurs check and raise the
                level of the argument of the Ref type constructor to [safe_level]
@@ -243,18 +233,16 @@ let gen checker =
             let _ = Type.occurs tvar targ in
             targ
          | _ -> helper targ
-       in
-       Type.of_node (Type.App(tcon, targ))
+       in Type.App(tcon, targ)
     | Type.Var { ty = Some ty; _ } -> helper ty
     | Type.Var ({ ty = None; quant; kind; _ } as var) ->
        begin match quant with
        | Type.Exists level when level >= checker.level ->
           Hashtbl.find_or_add map var ~default:(fun () ->
-              Type.of_node
-                (Type.Var (Type.fresh_var checker.tvargen Type.Univ kind)))
+              Type.Var (Type.fresh_var checker.tvargen Type.Univ kind))
        | _ -> ty
        end
-    | _ -> ty
+    | ty -> ty
   in helper
 
 (** [inst checker polyty] instantiates [polyty] by replacing universally
@@ -262,21 +250,21 @@ let gen checker =
 let inst checker =
   let map = Hashtbl.create (module Type.Var) in
   let rec helper ty =
-    match ty.Type.node with
+    match ty with
     | Type.App(tcon, targ) ->
-       Type.of_node (Type.App(helper tcon, helper targ))
+       Type.App(helper tcon, helper targ)
     | Type.Var { ty = Some ty; _ } -> helper ty
     | Type.Var ({ ty = None; quant; _ } as var) ->
        begin match quant with
        | Type.Exists _ -> ty
        | Type.Univ ->
           Hashtbl.find_or_add map var ~default:(fun () ->
-              Type.of_node
-                (Type.Var
+              Type.Var
                 (Type.fresh_var
                    checker.tvargen
                    (Type.Exists checker.level)
-                   var.kind)))
+                   var.kind)
+            )
        end
     | _ -> ty
   in helper
@@ -289,14 +277,13 @@ let inst_adt checker adt =
     | [] -> acc
     | qvar::qvars ->
        let targ =
-         Type.of_node
-           (Type.Var
-              (Type.fresh_var
-                 checker.tvargen (Type.Exists checker.level) qvar.Type.kind))
-       in helper (Type.of_node (Type.App(acc, targ))) qvars
+         Type.Var
+           (Type.fresh_var
+              checker.tvargen (Type.Exists checker.level) qvar.Type.kind)
+       in helper (Type.App(acc, targ)) qvars
   in
   helper
-    (Type.of_node (Type.Nominal (checker.package.name, adt.Type.name)))
+    (Type.Nominal (checker.package.name, adt.Type.name))
     adt.Type.typeparams
 
 (** [infer_pattern checker map ty pat] associates [ty] with [pat]'s register
@@ -370,9 +357,7 @@ let rec infer_term checker =
      infer_term checker rval >>= fun rval ->
      unify_types checker
        lval.Lambda.ty
-       (Type.of_node (Type.App( Type.of_node (Type.Prim Type.Ref)
-                              , rval.Lambda.ty )
-       )) >>| fun () ->
+       (Type.App(Type.Prim Type.Ref, rval.Lambda.ty)) >>| fun () ->
      Lambda.{ ty = rval.Lambda.ty; expr = Lambda.Assign(lval, rval) }
 
   | Term.Case(scrutinees, cases) ->
@@ -450,10 +435,10 @@ let rec infer_term checker =
   | Term.Lit lit ->
      Ok { Lambda.ty =
             begin match lit with
-            | Literal.Char _ -> Type.of_node (Type.Prim Type.Char)
-            | Literal.Float _ -> Type.of_node (Type.Prim Type.Float)
-            | Literal.Int _ -> Type.of_node (Type.Prim Type.Int)
-            | Literal.String _ -> Type.of_node (Type.Prim Type.String)
+            | Literal.Char _ -> Type.Prim Type.Char
+            | Literal.Float _ -> Type.Prim Type.Float
+            | Literal.Int _ -> Type.Prim Type.Int
+            | Literal.String _ -> Type.Prim Type.String
             end
         ; expr = Lambda.Lit lit }
 
@@ -463,11 +448,7 @@ let rec infer_term checker =
 
   | Term.Ref value ->
      infer_term checker value >>| fun value ->
-     Lambda.{ ty =
-                Type.of_node
-                  ( Type.App
-                      ( Type.of_node(Type.Prim Type.Ref)
-                      , value.Lambda.ty ) )
+     Lambda.{ ty = Type.App(Type.Prim Type.Ref, value.Lambda.ty)
             ; expr = Lambda.Ref(value) }
 
   | Term.Seq(s, t) ->

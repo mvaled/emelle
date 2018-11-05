@@ -29,7 +29,7 @@ let with_necessary_parens f pp parent_prec prec =
     f pp
 
 let rec print_type pp parent_prec ty =
-  match ty.Type.node with
+  match ty with
   | Type.App(f, x) ->
      let prec = 1 in
      with_necessary_parens (fun pp ->

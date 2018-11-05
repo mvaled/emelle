@@ -33,10 +33,6 @@ let max l r =
 
 (** Each type is annotated with the greatest level of its children. *)
 type t =
-  { mutable level : quant
-  ; node : t' }
-[@@deriving sexp]
-and t' =
   | App of t * t
   | Nominal of Ident.t
   | Prim of prim
@@ -81,23 +77,15 @@ let fresh_var vargen quant kind =
   vargen := !vargen + 1;
   { id = !vargen - 1; ty = None; quant; kind = kind }
 
-let of_node node =
-  let level =
-    match node with
-    | App(f, x) -> max f.level x.level
-    | Var var -> var.quant
-    | _ -> Univ
-  in { level; node }
-
 let arrow l r =
-  let arrow = { level = Univ; node = Prim Arrow } in
-  let ty = { level = l.level; node = App(arrow, l) } in
-  { level = max l.level r.level; node = App(ty, r) }
+  let arrow = Prim Arrow in
+  let ty = App(arrow, l) in
+  App(ty, r)
 
 
 (** [with_params ty \[a; b; ...; z\]] is (... ((ty a) b) ...z) *)
 let with_params ty =
-  List.fold ~f:(fun acc param -> of_node (App(acc, param))) ~init:ty
+  List.fold ~f:(fun acc param -> App(acc, param)) ~init:ty
 
 (** [curry \[a; b; ...; z\] ty] is a -> b -> ... z -> ty.
     [curry \[\] ty] is ty. *)
@@ -112,8 +100,8 @@ let rec curry input_tys output_ty =
 let type_of_constr ident adt constr =
   let _, product = adt.constrs.(constr) in
   let output_ty =
-    with_params (of_node (Nominal ident))
-      (List.map ~f:(fun x -> of_node (Var x)) adt.typeparams)
+    with_params (Nominal ident)
+      (List.map ~f:(fun x -> Var x) adt.typeparams)
   in curry product output_ty
 
 let kind_of_adt adt =
@@ -123,19 +111,14 @@ let kind_of_adt adt =
     in [ty]. It ignores universally quantified type variables and adjusts the
     levels of unassigned typevars when necessary. *)
 let rec occurs tvar ty =
-  if (compare_quant ty.level tvar.quant) = -1 then
-    false
-  else (
-    ty.level <- tvar.quant;
-    match ty.node with
-    | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
-    | Nominal _ -> false
-    | Prim _ -> false
-    | Var { id; _ } when id = tvar.id -> true
-    | Var { ty = Some ty; _ } -> occurs tvar ty
-    | Var tvar2 ->
-       if (compare_quant tvar2.quant tvar.quant) = 1 then (
-         tvar2.quant <- tvar.quant
-       );
-       false
-  )
+  match ty with
+  | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
+  | Nominal _ -> false
+  | Prim _ -> false
+  | Var { id; _ } when id = tvar.id -> true
+  | Var { ty = Some ty; _ } -> occurs tvar ty
+  | Var tvar2 ->
+     if (compare_quant tvar2.quant tvar.quant) = 1 then (
+       tvar2.quant <- tvar.quant
+     );
+     false

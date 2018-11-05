@@ -2,19 +2,14 @@ open Base
 open Emelle
 
 let monotypes =
-  [ Type.of_node (Type.Prim Type.Int)
-  ; Type.of_node (Type.Prim Type.Float)
-  ; Type.arrow
-      (Type.of_node (Type.Prim Type.Int))
-      (Type.of_node (Type.Prim Type.Int))
+  [ Type.Prim Type.Int
+  ; Type.Prim Type.Float
+  ; Type.arrow (Type.Prim Type.Int) (Type.Prim Type.Int)
   ]
 
 let not_monotypes =
-  [ Type.of_node (Type.Prim Type.Arrow)
-  ; Type.of_node
-      (Type.App(Type.of_node (Type.Prim Type.Arrow),
-                Type.of_node (Type.Prim Type.Int))
-      )
+  [ Type.Prim Type.Arrow
+  ; Type.App(Type.Prim Type.Arrow, Type.Prim Type.Int)
   ]
 
 let rec is_mono = function
