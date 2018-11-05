@@ -56,11 +56,11 @@ let compile_item self env commands item ~cont =
      List.fold_right ~f:(fun scrut acc ->
          acc >>= fun list ->
          Typecheck.in_new_level (fun checker ->
-             Typecheck.infer_term checker (-1) scrut
+             Typecheck.infer_term checker scrut
            ) self.typechecker >>| fun expr ->
          expr::list
        ) ~init:(Ok []) scruts >>= fun scruts ->
-     Typecheck.infer_branch self.typechecker (-1) scruts pats >>= fun () ->
+     Typecheck.infer_branch self.typechecker scruts pats >>= fun () ->
      let matrix =
        [ { Pattern.patterns = pats
          ; bindings = Map.empty (module Register)
@@ -84,11 +84,11 @@ let compile_item self env commands item ~cont =
   | Ast.Let_rec bindings ->
      Desugar.desugar_rec_bindings self.desugarer env bindings
      >>= fun (env, bindings) ->
-     Typecheck.infer_rec_bindings self.typechecker (-1) bindings
+     Typecheck.infer_rec_bindings self.typechecker bindings
      >>= fun bindings ->
      List.iter ~f:(fun (lhs, _) ->
          Hashtbl.change self.typechecker.env lhs ~f:(function
-             | Some ty -> Some (Typecheck.gen self.typechecker (-1) ty)
+             | Some ty -> Some (Typecheck.gen self.typechecker ty)
              | None -> None
            )
        ) bindings;

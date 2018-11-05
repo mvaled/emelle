@@ -4,7 +4,8 @@ type t = {
     package : Package.t;
     packages : (string, Package.t) Hashtbl.t;
     env : (Register.t, Type.t) Hashtbl.t;
-    mutable level : int;
+    level : int;
+    safe_level : int;
     tvargen : Type.vargen;
     kvargen : Kind.vargen
   }
@@ -15,6 +16,7 @@ let create package packages =
   ; packages
   ; env = Hashtbl.create (module Register)
   ; level = 0
+  ; safe_level = -1
   ; tvargen = Type.create_vargen ()
   ; kvargen = Kind.create_vargen () }
 
@@ -210,17 +212,17 @@ let type_adt_of_ast_adt checker adt =
   ; constr_names = constr_map
   ; constrs }
 
-let in_new_level f st =
-  st.level <- st.level + 1;
-  let result = f st in
-  st.level <- st.level - 1;
-  result
+let in_new_level f self =
+  f { self with level = self.level + 1 }
+
+let in_new_safe_level f self =
+  f { self with safe_level = self.level }
 
 (** [gen checker ty] generalizes a type by replacing existential type variables
     of level [checker.level] or higher with a universally quantified variable.
     Universally quantified variables really shouldn't appear in [ty], but the
     function just ignores them. *)
-let gen checker safe_level =
+let gen checker =
   let map = Hashtbl.create (module Type.Var) in
   let rec helper ty =
     match ty.Type.node with
@@ -235,7 +237,8 @@ let gen checker safe_level =
                level of the argument of the Ref type constructor to [safe_level]
                in order to have a sound type system in the presence of refs *)
             let tvar =
-              Type.fresh_var checker.tvargen (Type.Exists safe_level) Kind.Mono
+              Type.fresh_var checker.tvargen (Type.Exists checker.safe_level)
+                Kind.Mono
             in
             let _ = Type.occurs tvar targ in
             targ
@@ -344,16 +347,13 @@ let rec infer_pattern checker map ty pat =
 
 (** [infer_expr typechecker term] infers the type of [term], returning a
     result. *)
-let rec infer_term checker safe_level =
+let rec infer_term checker =
   let open Result.Monad_infix in
   function
-  | Term.Ann{term; _} -> infer_term checker safe_level term
+  | Term.Ann{term; _} -> infer_term checker term
 
   | Term.App(f, x) ->
-     begin match
-       infer_term checker safe_level f,
-       infer_term checker safe_level x
-     with
+     begin match infer_term checker f, infer_term checker x with
      | (Ok f, Ok x) ->
         let var = fresh_tvar checker in
         let result =
@@ -366,8 +366,8 @@ let rec infer_term checker safe_level =
      end
 
   | Term.Assign(lval, rval) ->
-     infer_term checker safe_level lval >>= fun lval ->
-     infer_term checker safe_level rval >>= fun rval ->
+     infer_term checker lval >>= fun lval ->
+     infer_term checker rval >>= fun rval ->
      unify_types checker
        lval.Lambda.ty
        (Type.of_node (Type.App( Type.of_node (Type.Prim Type.Ref)
@@ -380,14 +380,14 @@ let rec infer_term checker safe_level =
      List.fold_right ~f:(fun scrutinee acc ->
          acc >>= fun list ->
          in_new_level (fun checker ->
-             infer_term checker safe_level scrutinee
+             infer_term checker scrutinee
            ) checker >>| fun expr ->
          expr::list
        ) ~init:(Ok []) scrutinees >>= fun scruts ->
      List.fold_right ~f:(fun (pats, regs, consequent) acc ->
          acc >>= fun (idx, matrix, branches) ->
-         infer_branch checker safe_level scruts pats >>= fun () ->
-         infer_term checker safe_level consequent >>= fun consequent ->
+         infer_branch checker scruts pats >>= fun () ->
+         infer_term checker consequent >>= fun consequent ->
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
          ( idx - 1
          , { Pattern.patterns = pats
@@ -420,30 +420,31 @@ let rec infer_term checker safe_level =
   | Term.Lam(id, body) ->
      let var = fresh_tvar checker in
      Hashtbl.add_exn checker.env ~key:id ~data:var;
-     infer_term checker checker.level body >>= fun body ->
+     in_new_safe_level (fun checker ->
+         infer_term checker body
+       ) checker >>= fun body ->
      Ok Lambda.{ ty = Type.arrow var body.Lambda.ty
                ; expr = Lambda.Lam(id, body) }
 
   | Term.Let(lhs, rhs, body) ->
      in_new_level (fun checker ->
-         infer_term checker safe_level rhs
+         infer_term checker rhs
        ) checker >>= fun rhs ->
-     Hashtbl.add_exn
-       checker.env ~key:lhs ~data:(gen checker safe_level rhs.Lambda.ty);
-     infer_term checker safe_level body >>| fun body ->
+     Hashtbl.add_exn checker.env ~key:lhs ~data:(gen checker rhs.Lambda.ty);
+     infer_term checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
 
   | Term.Let_rec(bindings, body) ->
-     infer_rec_bindings checker safe_level bindings >>= fun bindings ->
+     infer_rec_bindings checker bindings >>= fun bindings ->
      (* In the RHS of let-rec bindings, LHS names aren't quantified. Here,
         quantify them for the let-rec body. *)
      List.iter ~f:(fun (lhs, _) ->
          Hashtbl.change checker.env lhs ~f:(function
-             | Some ty -> Some (gen checker safe_level ty)
+             | Some ty -> Some (gen checker ty)
              | None -> None
            )
        ) bindings;
-     infer_term checker safe_level body >>| fun body ->
+     infer_term checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
 
   | Term.Lit lit ->
@@ -461,7 +462,7 @@ let rec infer_term checker safe_level =
      { Lambda.ty = inst checker ty; expr = Lambda.Prim op }
 
   | Term.Ref value ->
-     infer_term checker safe_level value >>| fun value ->
+     infer_term checker value >>| fun value ->
      Lambda.{ ty =
                 Type.of_node
                   ( Type.App
@@ -470,8 +471,8 @@ let rec infer_term checker safe_level =
             ; expr = Lambda.Ref(value) }
 
   | Term.Seq(s, t) ->
-     infer_term checker safe_level s >>= fun s ->
-     infer_term checker safe_level t >>| fun t ->
+     infer_term checker s >>= fun s ->
+     infer_term checker t >>| fun t ->
      Lambda.{ ty = t.Lambda.ty; expr = Lambda.Seq(s, t) }
 
   | Term.Var reg ->
@@ -480,7 +481,7 @@ let rec infer_term checker safe_level =
         Ok Lambda.{ ty = inst checker ty; expr = Lambda.Local_var reg }
      | None -> Error (Sequence.return (Message.Unreachable "Tc expr var"))
 
-and infer_branch checker safe_level scruts pats =
+and infer_branch checker scruts pats =
   let open Result.Monad_infix in
   let rec f map scruts pats =
     match scruts, pats with
@@ -493,17 +494,15 @@ and infer_branch checker safe_level scruts pats =
        f map scruts pats
   in
   let map = Map.empty (module Register) in
-  in_new_level (fun _ ->
+  in_new_level (fun checker ->
       f map scruts pats >>| fun map ->
       Map.iteri ~f:(fun ~key ~data ->
-          let _ =
-            Hashtbl.add checker.env ~key ~data:(gen checker safe_level data)
-          in
+          let _ = Hashtbl.add checker.env ~key ~data:(gen checker data) in
           ()
         ) map
     ) checker
 
-and infer_rec_bindings checker safe_level bindings =
+and infer_rec_bindings checker bindings =
   let open Result.Monad_infix in
   in_new_level (fun checker ->
       (* Associate each new binding with a fresh type variable *)
@@ -515,7 +514,7 @@ and infer_rec_bindings checker safe_level bindings =
          the type variable *)
       let f (lhs, rhs) acc =
         let tvar = Hashtbl.find_exn checker.env lhs in
-        infer_term checker safe_level rhs >>= fun rhs ->
+        infer_term checker rhs >>= fun rhs ->
         match acc, unify_types checker tvar rhs.Lambda.ty with
         | Ok acc, Ok () -> Ok ((lhs, rhs)::acc)
         | Ok _, Error e | Error e, Ok () -> Error e
