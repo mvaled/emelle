@@ -155,13 +155,21 @@ let tests =
 
       let _ =
         let r = ref None in
-        r := Some 0
+        r := Some 0;
+        r := Some 1
 
       let make_ref = fun x -> ref x
 
       let str_ref = make_ref ""
 
       let int_ref = make_ref 0
+
+      let opt_ref = make_ref None
+
+      let _ =
+        opt_ref := Some 1;
+        opt_ref := Some 2
+
      |} ]
 
 let _ =

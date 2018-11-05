@@ -1,5 +1,10 @@
 open Base
 
+type purity =
+  | Pure
+  | Impure
+[@@deriving sexp]
+
 type prim =
   | Arrow
   | Char
@@ -9,27 +14,17 @@ type prim =
   | String
 [@@deriving compare, sexp]
 
+type levels = {
+    mutable let_level : int;
+    mutable lam_level : int;
+  } [@@deriving sexp]
+
 (** Type [quant] describes whether a type variable is existentially quantified
     within a scope or universally quantified. *)
 type quant =
-  | Exists of int
+  | Exists of levels
   | Univ
 [@@deriving sexp]
-
-(* A universal level is greater than all existential levels *)
-let compare_quant l r =
-  match l, r with
-  | Univ, Univ -> 0
-  | Univ, Exists _ -> 1
-  | Exists _, Univ -> -1
-  | Exists l, Exists r -> Int.compare l r
-
-(** Returns the greater of two ints. *)
-let max l r =
-  if (compare_quant l r) = -1 then
-    r
-  else
-    l
 
 (** Each type is annotated with the greatest level of its children. *)
 type t =
@@ -42,6 +37,7 @@ and var =
   { id : int
   ; mutable quant : quant
   ; mutable ty : t option
+  ; mutable purity : purity
   ; kind : Kind.t }
 [@@deriving sexp]
 
@@ -73,15 +69,18 @@ let equal_prim x y = (compare_prim x y) = 0
 (** [create_vargen ()] creates a fresh vargen state. *)
 let create_vargen () = { contents = 0 }
 
-let fresh_var vargen quant kind =
+let fresh_var vargen purity quant kind =
   vargen := !vargen + 1;
-  { id = !vargen - 1; ty = None; quant; kind = kind }
+  { id = !vargen - 1
+  ; ty = None
+  ; quant
+  ; purity
+  ; kind = kind }
 
 let arrow l r =
   let arrow = Prim Arrow in
   let ty = App(arrow, l) in
   App(ty, r)
-
 
 (** [with_params ty \[a; b; ...; z\]] is (... ((ty a) b) ...z) *)
 let with_params ty =
@@ -112,13 +111,26 @@ let kind_of_adt adt =
     levels of unassigned typevars when necessary. *)
 let rec occurs tvar ty =
   match ty with
-  | App(tcon, targ) -> occurs tvar tcon || occurs tvar targ
+  | App(tcon, targ) ->
+     occurs tvar tcon || occurs tvar targ
   | Nominal _ -> false
   | Prim _ -> false
   | Var { id; _ } when id = tvar.id -> true
   | Var { ty = Some ty; _ } -> occurs tvar ty
   | Var tvar2 ->
-     if (compare_quant tvar2.quant tvar.quant) = 1 then (
-       tvar2.quant <- tvar.quant
-     );
+     begin match tvar.quant, tvar2.quant with
+     | Exists levels, Exists levels2 ->
+        if levels2.let_level > levels.let_level then (
+          levels2.let_level <- levels.let_level
+        );
+        if levels2.lam_level > levels.lam_level then (
+          levels2.lam_level <- levels.lam_level
+        )
+     | _ -> ()
+     end;
+     begin match tvar2.purity with
+     | Pure ->
+        tvar2.purity <- tvar.purity
+     | _ -> ()
+     end;
      false

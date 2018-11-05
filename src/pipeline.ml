@@ -55,7 +55,7 @@ let compile_item self env commands item ~cont =
      >>= fun (map, scruts, regs, pats) ->
      List.fold_right ~f:(fun scrut acc ->
          acc >>= fun list ->
-         Typecheck.in_new_level (fun checker ->
+         Typecheck.in_new_let_level (fun checker ->
              Typecheck.infer_term checker scrut
            ) self.typechecker >>| fun expr ->
          expr::list
