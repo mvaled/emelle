@@ -45,6 +45,9 @@ let rec pattern_of_ast_pattern st map reg_opt (_, node) =
         List.fold_right ~f:f ~init:(Ok ([], map)) pats >>| fun (pats, map) ->
         (Pattern.{node = Con(adt, idx, pats); reg = reg_opt}, map)
      end
+  | Ast.Deref pat ->
+     pattern_of_ast_pattern st map None pat >>| fun (pat, map) ->
+     (Pattern.{node = Deref pat; reg = reg_opt}, map)
   | Ast.Var name ->
      let reg =
        match reg_opt with

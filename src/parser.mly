@@ -169,8 +169,10 @@ expr_atom:
 pattern:
   | qual_uid nonempty_list(pattern_2) {
         (($symbolstartpos, $endpos), Ast.Con($1, $2))
-      }
+     }
+  | REF pattern_2 { (($symbolstartpos, $endpos), Ast.Deref $2) }
   | pattern_2 { $1 }
+  ;
 
 pattern_2:
   | qual_uid { (($symbolstartpos, $endpos), Ast.Con($1, [])) }

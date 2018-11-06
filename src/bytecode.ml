@@ -4,11 +4,17 @@
 
 open Base
 
-type occurrence = operand * int list
+type occurrence' =
+  | Constr of int * occurrence'
+  | Contents of occurrence'
+  | Nil
+
+type occurrence = operand * occurrence'
 
 and decision_tree =
   | Fail
   | Leaf of occurrence list * int
+  | Deref of occurrence * decision_tree
   | Switch of occurrence * (int * decision_tree) list * decision_tree
 
 and operand =
@@ -84,9 +90,13 @@ let rec free_var self reg =
 let convert_occurrence scruts =
   (* The structure of this function is similar to left fold. *)
   let rec helper acc = function
-    | Pattern.Cons(idx, occurrence) -> helper (idx::acc) occurrence
-    | Pattern.Nil idx -> (scruts.(idx), acc)
-  in helper []
+    | Pattern.Cons(idx, occurrence) ->
+       helper (Constr(idx, acc)) occurrence
+    | Pattern.Contents occurrence ->
+       helper (Contents acc) occurrence
+    | Pattern.Nil idx ->
+       (scruts.(idx), acc)
+  in helper Nil
 
 let rec convert_decision_tree self scruts = function
   | Pattern.Fail -> Fail
@@ -96,6 +106,9 @@ let rec convert_decision_tree self scruts = function
            (convert_occurrence scruts occ)::acc
          ) ~init:[] bindings
      in Leaf(bound_occs, jump)
+  | Pattern.Ref(occ, subtree) ->
+     let occ = convert_occurrence scruts occ in
+     Deref(occ, convert_decision_tree self scruts subtree)
   | Pattern.Switch(occ, subtrees, default) ->
      let occ = convert_occurrence scruts occ in
      let subtrees =

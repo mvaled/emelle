@@ -18,6 +18,7 @@ type 'a polytype = Forall of string list * 'a monotype
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =
   | Con of qual_id * 'a pattern list
+  | Deref of 'a pattern
   | Var of string
   | Wild
 

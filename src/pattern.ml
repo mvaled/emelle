@@ -5,6 +5,7 @@ type t =
   ; reg : Register.t option }
 and pattern =
   | Con of Type.adt * int * t list (** Constructor pattern *)
+  | Deref of t
   | Or of t * t
   | Wild (** Wildcard pattern *)
 
@@ -15,10 +16,12 @@ and pattern =
 type occurrence =
   | Nil of int
   | Cons of int * occurrence
+  | Contents of occurrence
 
 type occurrences = occurrence list
 
 type 'a decision_tree =
+  | Ref of occurrence * 'a decision_tree
   | Fail
   | Leaf of (Register.t, occurrence, Register.comparator_witness) Map.t * 'a
     (** A leaf holds a mapping from registers to pattern match occurrences. *)
@@ -60,19 +63,19 @@ let swap_column idx =
         )
     ) ~init:(Some [])
 
+type find_adt_result =
+  | All_wilds
+  | Adt of Type.adt * int
+  | Found_ref of int
+
 let find_adt pats =
   let rec f i pats =
     match pats with
-    | [] -> None
-    | {node = Con(adt, _, _); _}::_ -> Some (adt, i)
+    | [] -> All_wilds
+    | {node = Con(adt, _, _); _}::_ -> Adt(adt, i)
+    | {node = Deref _; _}::_ -> Found_ref i
     | {node = Wild; _ }::xs -> f (i + 1) xs
-    | {node = Or(p1, p2); _}::pats ->
-       match f i (p1::pats) with
-       | Some x -> Some x
-       | None ->
-          match f i (p2::pats) with
-          | Some x -> Some x
-          | None -> None
+    | {node = Or(p1, _); _}::pats -> f i (p1::pats)
   in f 0 pats
 
 (** Specialize operation as described in Compiling Pattern Matching to Good
@@ -98,6 +101,7 @@ let rec specialize constr product occurrence rows =
                   patterns = cpats@rest_pats
                 ; bindings }::rows)
        | Con _ -> Some rows
+       | Deref _ -> None
        | Wild ->
           Some ({ row with
                   patterns =
@@ -120,6 +124,33 @@ let rec specialize constr product occurrence rows =
       acc >>= fun rows -> helper row rows
     ) ~init:(Some []) rows
 
+(** A variation of the specialization algorithm for dereference patterns *)
+let specialize_ref occurrence rows =
+  let open Option.Monad_infix in
+  let helper row rows =
+    match row.patterns with
+    | [] -> None
+    | { node; reg }::rest_pats ->
+       let bindings =
+         match reg with
+         | None -> row.bindings
+         | Some reg -> Map.set row.bindings ~key:reg ~data:occurrence
+       in
+       match node with
+       | Deref pat->
+          Some ({ row with
+                  patterns = pat::rest_pats
+                ; bindings }::rows)
+       | Wild ->
+          Some ({ row with
+                  patterns = { node = Wild; reg = None }::rest_pats
+                ; bindings }::rows)
+       | _ -> None
+  in
+  List.fold_right ~f:(fun row acc ->
+      acc >>= fun rows -> helper row rows
+    ) ~init:(Some []) rows
+
 (** Construct the default matrix *)
 let rec default_matrix rows =
   let open Option.Monad_infix in
@@ -129,6 +160,7 @@ let rec default_matrix rows =
     | first_pat::rest_pats ->
        match first_pat.node with
        | Con _ -> Some rows
+       | Deref _ -> None
        | Wild ->
           Some ({ row with patterns = rest_pats }::rows)
        | Or(p1, p2) ->
@@ -176,14 +208,14 @@ let rec decision_tree_of_matrix occurrences =
   | [] -> Ok Fail (* Case 1 *)
   | (row::_) as rows ->
      match find_adt row.patterns with
-     | None ->
+     | All_wilds ->
         (* Case 2 *)
         map_regs_to_occs occurrences row >>| fun map ->
         Leaf(map, row.action)
-     | Some(alg, i) ->
+     | Adt(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
-        match swap_column i rows with
+        begin match swap_column i rows with
         | None -> Error Sequence.empty
         | Some rows ->
            match default_matrix rows with
@@ -225,4 +257,19 @@ let rec decision_tree_of_matrix occurrences =
                  decision_tree_of_matrix rest_occs default
                  >>| fun default_tree ->
                  let switch = Switch(first_occ, jump_tbl, default_tree) in
+                 if i = 0 then switch else Swap(i, switch)
+        end
+     | Found_ref i ->
+        match swap_occurrences i occurrences with
+        | None -> Error Sequence.empty
+        | Some (first_occ, rest_occs) ->
+           match swap_column i rows with
+           | None -> Error Sequence.empty
+           | Some rows ->
+              match specialize_ref first_occ rows with
+              | None -> Error Sequence.empty
+              | Some matrix ->
+                 let occs = (Contents first_occ)::rest_occs in
+                 decision_tree_of_matrix occs matrix >>| fun tree ->
+                 let switch = Ref(first_occ, tree) in
                  if i = 0 then switch else Swap(i, switch)

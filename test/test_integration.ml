@@ -153,6 +153,10 @@ let tests =
   ; {|()
       type Option a = None | Some a
 
+      let Some x = Some 1
+
+      let Some y = Some ""
+
       let _ =
         let r = ref None in
         r := Some 0;
@@ -170,6 +174,9 @@ let tests =
         opt_ref := Some 1;
         opt_ref := Some 2
 
+     |}
+  ; {|(x)
+      let ref x = ref 0
      |} ]
 
 let _ =
