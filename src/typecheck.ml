@@ -150,61 +150,71 @@ let rec normalize checker tvars (_, node) =
        | None -> Error (Sequence.return (Message.Unresolved_path path))
      end
   | Ast.TVar name ->
-     match Hashtbl.find tvars name with
+     match Env.find tvars name with
      | Some tvar -> Ok tvar
      | None -> Error (Sequence.return (Message.Unresolved_typevar name))
 
+let fresh_kinds_of_typeparams checker =
+  List.map ~f:(fun _ -> (Kind.Var (Kind.fresh_var checker.kvargen)))
+
+let tvars_of_typeparams checker tvar_map kinds names =
+  let open Result.Monad_infix in
+  let rec f tvar_map tvar_list kinds strs =
+    match kinds, strs with
+    | kind::kinds, str::strs ->
+      let tvar = Type.fresh_var checker.tvargen Type.Pure Type.Univ kind in
+      begin match Env.add tvar_map str (Type.Var tvar) with
+      | None -> Error (Sequence.return (Message.Redefined_typevar str))
+      | Some tvar_map ->
+         (* Fold RIGHT, not left! *)
+         f tvar_map tvar_list kinds strs >>| fun (tvar_map, tvar_list) ->
+         (tvar_map, tvar::tvar_list)
+      end
+    | [], [] -> Ok (tvar_map, tvar_list)
+    | _ -> Error Sequence.empty
+  in f tvar_map [] kinds names
+
 let type_of_ast_polytype checker (Ast.Forall(typeparams, body)) =
   let open Result.Monad_infix in
-  let tvar_map = Hashtbl.create (module String) in
-  List.fold_right ~f:(fun str acc ->
-      acc >>= fun () ->
-      let tvar =
-        Type.fresh_var checker.tvargen Type.Pure Type.Univ
-          (Kind.Var (Kind.fresh_var checker.kvargen))
-      in
-      match Hashtbl.add tvar_map ~key:str ~data:(Type.Var tvar) with
-      | `Duplicate -> Error (Sequence.return (Message.Redefined_typevar str))
-      | `Ok -> Ok ()
-    ) ~init:(Ok ()) typeparams
-  >>= fun () ->
+  let tvar_map = Env.empty (module String) in
+  let kinds = fresh_kinds_of_typeparams checker typeparams in
+  tvars_of_typeparams checker tvar_map kinds typeparams
+  >>= fun (tvar_map, _) ->
   normalize checker tvar_map body
 
 (** Convert an [Ast.adt] into a [Type.adt] *)
 let type_adt_of_ast_adt checker adt =
   let open Result.Monad_infix in
-  let tvar_map = Hashtbl.create (module String) in
+  let kinds = fresh_kinds_of_typeparams checker adt.Ast.typeparams in
+  let kind = Kind.curry kinds Kind.Mono in
   let constr_map = Hashtbl.create (module String) in
-  List.fold_right ~f:(fun str acc ->
-      acc >>= fun list ->
-      let tvar =
-        Type.fresh_var checker.tvargen Type.Pure Type.Univ
-          (Kind.Var (Kind.fresh_var checker.kvargen))
-      in
-      match Hashtbl.add tvar_map ~key:str ~data:(Type.Var tvar) with
-      | `Duplicate -> Error (Sequence.return (Message.Redefined_typevar str))
-      | `Ok -> Ok (tvar::list)
-    ) ~init:(Ok []) adt.Ast.typeparams
-  >>= fun tvar_list ->
   List.fold_right ~f:(fun (name, product) acc ->
-      acc >>= fun (list, idx) ->
+      acc >>= fun (constr_list, idx) ->
       match Hashtbl.add constr_map ~key:name ~data:idx with
       | `Duplicate -> Error (Sequence.return (Message.Redefined_constr name))
       | `Ok ->
+         let tvar_map = Env.empty (module String) in
+         tvars_of_typeparams checker tvar_map kinds adt.Ast.typeparams
+         >>= fun (tvar_map, tvar_list) ->
          List.fold_right ~f:(fun ty acc ->
-             acc >>= fun list ->
+             acc >>= fun products ->
              normalize checker tvar_map ty >>= fun ty ->
              kind_of_type checker ty >>= fun kind ->
              unify_kinds kind Kind.Mono >>| fun () ->
-             ty::list
+             ty::products
            ) ~init:(Ok []) product
          >>| fun product ->
-         ((name, product)::list, idx - 1)
+         let out_ty =
+           Type.with_params
+             (Type.Nominal (checker.package.Package.name, adt.Ast.name))
+             (List.map ~f:(fun var -> Type.Var var) tvar_list)
+         in
+         ((name, product, out_ty)::constr_list, idx - 1)
     ) ~init:(Ok ([], List.length adt.Ast.constrs - 1)) adt.Ast.constrs
   >>| fun (constrs, _) ->
   let constrs = Array.of_list constrs in
   { Type.name = adt.Ast.name
-  ; typeparams = tvar_list
+  ; adt_kind = kind
   ; constr_names = constr_map
   ; constrs }
 
@@ -268,24 +278,6 @@ let inst checker =
     | _ -> ty
   in helper
 
-(** [inst_adt typechecker adt] returns a type of kind * representing the type
-    constructor of [adt] being applied to fresh type variables of the correct
-    kinds. *)
-let inst_adt checker adt =
-  let rec helper acc = function
-    | [] -> acc
-    | qvar::qvars ->
-       let targ =
-         Type.Var
-           (Type.fresh_var
-              checker.tvargen
-              qvar.Type.purity (fresh_quant checker) qvar.Type.kind)
-       in helper (Type.App(acc, targ)) qvars
-  in
-  helper
-    (Type.Nominal (checker.package.name, adt.Type.name))
-    adt.Type.typeparams
-
 let make_impure checker ty =
   let tvar =
     Type.fresh_var checker.tvargen Type.Impure (fresh_quant checker) Kind.Mono
@@ -314,10 +306,10 @@ let rec infer_pattern checker map ty pat =
   in
   match pat.Pattern.node with
   | Pattern.Con(adt, idx, pats) ->
-     let nom_ty = inst_adt checker adt in
+     let (_, products, adt_ty) = adt.Type.constrs.(idx) in
+     let nom_ty = inst checker adt_ty in
      unify_types checker ty nom_ty >>= fun () ->
      type_binding pat >>= fun map ->
-     let (_, products) = adt.Type.constrs.(idx) in
      let rec f map pats tys =
        match pats, tys with
        | [], [] -> Ok map
@@ -400,10 +392,8 @@ let rec infer_term checker =
      ; expr = Lambda.Case(scruts, decision_tree, branches) }
 
   | Term.Constr(adt, idx) ->
-     let _, product = adt.Type.constrs.(idx) in
-     let ty =
-       Type.type_of_constr ((checker.package.name, adt.Type.name)) adt idx
-     in
+     let _, product, out_ty = adt.Type.constrs.(idx) in
+     let ty = Type.curry product out_ty in
      Ok Lambda.{ ty = inst checker ty
                ; expr = Lambda.Constr(List.length product) }
 

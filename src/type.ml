@@ -54,11 +54,12 @@ module Var = struct
   let hash x = x.id
 end
 
-type adt =
-  { name : string
-  ; typeparams: var list
-  ; constr_names: (string, int) Hashtbl.t
-  ; constrs: (string * t list) array }
+type adt = {
+    name : string;
+    adt_kind : Kind.t;
+    constr_names : (string, int) Hashtbl.t;
+    constrs : (string * t list * t) array
+  }
 
 type decl =
   | Abstract of Kind.t
@@ -96,15 +97,11 @@ let rec curry input_tys output_ty =
      arrow ty out_ty
 
 (** Given an ADT and one of its constructors, return the constructor's type *)
-let type_of_constr ident adt constr =
-  let _, product = adt.constrs.(constr) in
-  let output_ty =
-    with_params (Nominal ident)
-      (List.map ~f:(fun x -> Var x) adt.typeparams)
-  in curry product output_ty
+let type_of_constr adt constr =
+  let _, product, output_ty = adt.constrs.(constr) in
+  curry product output_ty
 
-let kind_of_adt adt =
-  Kind.curry (List.map ~f:(fun uvar -> uvar.kind) adt.typeparams) Kind.Mono
+let kind_of_adt adt = adt.adt_kind
 
 (** [occurs tvar ty] performs the occurs check, returning true if [tyvar] occurs
     in [ty]. It ignores universally quantified type variables and adjusts the

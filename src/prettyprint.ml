@@ -67,6 +67,8 @@ let print_error pp e =
   | Message.Abstract_type id ->
      Buffer.add_string pp.buffer "Abstract type ";
      print_ident pp id
+  | Message.Kind_unification_fail _ ->
+     Buffer.add_string pp.buffer "Kind unification fail"
   | Message.Type_unification_fail(t1, t2) ->
      Buffer.add_string pp.buffer "Type unification fail: ";
      print_type pp (-1) t1;
@@ -79,7 +81,7 @@ let print_error pp e =
      Buffer.add_string pp.buffer "Unresolved id ";
      print_ident pp id
   | Message.Unresolved_path path ->
-     Buffer.add_string pp.buffer "Unresolved_path ";
+     Buffer.add_string pp.buffer "Unresolved path ";
      print_path pp path
   | _ ->
      Buffer.add_string pp.buffer "other"

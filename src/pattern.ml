@@ -197,7 +197,7 @@ let rec decision_tree_of_matrix occurrences =
                    ["Pattern idx out of bounds: "; Int.to_string i]
                  )))
               | Some (first_occ, rest_occs) ->
-                 Array.foldi ~f:(fun id acc (_, product) ->
+                 Array.foldi ~f:(fun id acc (_, product, _) ->
                      acc >>= fun () ->
                      (* Just like how the matched value is popped off the stack
                         and its children pushed on the stack, pop off the

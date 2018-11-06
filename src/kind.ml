@@ -14,8 +14,9 @@ type vargen = int ref
 let create_vargen () = ref 0
 
 let fresh_var vargen =
-  vargen := !vargen + 1;
-  { id = !vargen - 1; kind = None }
+  let id = !vargen in
+  vargen := id + 1;
+  { id = id; kind = None }
 
 let rec curry input_ks output_k =
   match input_ks with
