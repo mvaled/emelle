@@ -179,7 +179,7 @@ let tests =
       let ref x = ref 0
      |} ]
 
-let _ =
+let () =
   List.iter ~f:(fun test ->
       match
         Parser.file Lexer.expr (Lexing.from_string test)
@@ -191,4 +191,24 @@ let _ =
          Sequence.iter ~f:(Emelle.Prettyprint.print_error pp) e;
          Stdio.print_endline (Emelle.Prettyprint.to_string pp);
          raise (Module_fail test)
+    ) tests
+
+let tests =
+  [ {|()
+      type Option a = None | Some a
+
+      let r = ref None
+
+      let _ = r := Some 0
+
+      let _ = r := Some "foo"
+     |} ]
+
+let () =
+  List.iter ~f:(fun test ->
+      match Parser.file Lexer.expr (Lexing.from_string test)
+            |> Pipeline.compile (Hashtbl.create (module String)) "main"
+      with
+      | Ok _ -> raise (Module_fail test)
+      | Error _ -> ()
     ) tests
