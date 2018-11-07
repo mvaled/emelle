@@ -177,7 +177,18 @@ let tests =
      |}
   ; {|(x)
       let ref x = ref 0
-     |} ]
+     |}
+  ; {|()
+      type Option a = Some a | None
+
+      let id = fun x -> x
+
+      let generalize_me = id (fun x -> ref x)
+
+      let str_ref = generalize_me "foo"
+
+      let int_ref = generalize_me 0
+     |}]
 
 let () =
   List.iter ~f:(fun test ->

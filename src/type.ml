@@ -120,9 +120,13 @@ let rec occurs tvar ty =
         if levels2.let_level > levels.let_level then (
           levels2.let_level <- levels.let_level
         );
-        if levels2.lam_level > levels.lam_level then (
-          levels2.lam_level <- levels.lam_level
-        )
+        begin match tvar.purity with
+        | Impure ->
+           if levels2.lam_level > levels.lam_level then (
+             levels2.lam_level <- levels.lam_level
+           )
+        | Pure -> ()
+        end
      | _ -> ()
      end;
      begin match tvar2.purity with

@@ -85,7 +85,7 @@ let rec free_var self reg =
          Error (Sequence.return (Message.Unreachable "Bytecode free_var"))
     )
 
-(** Reverse the occurrence from the pattern match compilation into a addressing
+(** Reverse the occurrence from the pattern match compilation into an addressing
     path. *)
 let convert_occurrence scruts =
   (* The structure of this function is similar to left fold. *)
