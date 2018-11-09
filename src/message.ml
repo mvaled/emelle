@@ -1,7 +1,7 @@
 open Base
 
 type error =
-  | Abstract_type of Ident.t
+  | Abstract_type of Path.t
   | Kind_unification_fail of Kind.t * Kind.t
   | Lexer_error of string
   | Mismatched_arity
@@ -12,9 +12,9 @@ type error =
   | Reexported_name of string
   | Type_unification_fail of Type.t * Type.t
   | Unimplemented of string
-  | Unknown_constr of Ident.t * string
+  | Unknown_constr of Path.t * string
   | Unreachable of string
-  | Unresolved_id of Ident.t
+  | Unresolved_id of Path.t
   | Unresolved_path of Ast.qual_id
-  | Unresolved_type of Ident.t
+  | Unresolved_type of Path.t
   | Unresolved_typevar of string

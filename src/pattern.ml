@@ -2,7 +2,7 @@ open Base
 
 type t =
   { node : pattern
-  ; reg : Register.t option }
+  ; id : Ident.t option }
 and pattern =
   | Con of Type.adt * int * t list (** Constructor pattern *)
   | Deref of t
@@ -23,8 +23,8 @@ type occurrences = occurrence list
 type 'a decision_tree =
   | Ref of occurrence * 'a decision_tree
   | Fail
-  | Leaf of (Register.t, occurrence, Register.comparator_witness) Map.t * 'a
-    (** A leaf holds a mapping from registers to pattern match occurrences. *)
+  | Leaf of (Ident.t, occurrence, Ident.comparator_witness) Map.t * 'a
+    (** A leaf holds a mapping from idents to pattern match occurrences. *)
   | Switch of occurrence * (int, 'a decision_tree) Hashtbl.t * 'a decision_tree
     (** A switch holds the scrutinee occurrence, a map from constructors to
         decision trees, and a default decision tree. *)
@@ -32,8 +32,8 @@ type 'a decision_tree =
 
 type 'a row = {
     patterns : t list;
-    bindings : (Register.t, occurrence, Register.comparator_witness) Map.t;
-    (** [bindings] holds a map from registers to already-popped occurrences. *)
+    bindings : (Ident.t, occurrence, Ident.comparator_witness) Map.t;
+    (** [bindings] holds a map from idents to already-popped occurrences. *)
     action : 'a
   }
 
@@ -87,16 +87,16 @@ let rec specialize constr product occurrence rows =
     | [] -> None
     | first_pat::rest_pats ->
        let bindings =
-         match first_pat.reg with
+         match first_pat.id with
          | None -> row.bindings
-         | Some reg -> Map.set row.bindings ~key:reg ~data:occurrence
+         | Some id -> Map.set row.bindings ~key:id ~data:occurrence
        in
        let rec fill acc next = function
          | [] -> acc
          | _::xs -> fill (next::acc) next xs
        in
        match first_pat.node with
-       | Con(_, id, cpats) when id = constr ->
+       | Con(_, name, cpats) when name = constr ->
           Some ({ row with
                   patterns = cpats@rest_pats
                 ; bindings }::rows)
@@ -105,7 +105,7 @@ let rec specialize constr product occurrence rows =
        | Wild ->
           Some ({ row with
                   patterns =
-                    fill rest_pats { node = Wild; reg = None } product
+                    fill rest_pats { node = Wild; id = None } product
                 ; bindings }::rows)
        | Or(p1, p2) ->
           specialize constr product occurrence
@@ -130,11 +130,11 @@ let specialize_ref occurrence rows =
   let helper row rows =
     match row.patterns with
     | [] -> None
-    | { node; reg }::rest_pats ->
+    | { node; id }::rest_pats ->
        let bindings =
-         match reg with
+         match id with
          | None -> row.bindings
-         | Some reg -> Map.set row.bindings ~key:reg ~data:occurrence
+         | Some id -> Map.set row.bindings ~key:id ~data:occurrence
        in
        match node with
        | Deref pat->
@@ -143,7 +143,7 @@ let specialize_ref occurrence rows =
                 ; bindings }::rows)
        | Wild ->
           Some ({ row with
-                  patterns = { node = Wild; reg = None }::rest_pats
+                  patterns = { node = Wild; id = None }::rest_pats
                 ; bindings }::rows)
        | _ -> None
   in
@@ -174,7 +174,7 @@ let rec default_matrix rows =
       acc >>= fun rows -> helper row rows
     ) ~init:(Some []) rows
 
-let map_regs_to_occs occurrences row =
+let map_ids_to_occs occurrences row =
   let rec helper map occurrences list =
     match occurrences, list with
     | [], [] -> Ok map
@@ -183,9 +183,9 @@ let map_regs_to_occs occurrences row =
     | _::_, [] ->
        Error (Sequence.return (Message.Unreachable "Too many occurrences"))
     | occ::occs, pat::pats ->
-       match pat.reg with
+       match pat.id with
        | None -> helper map occs pats
-       | Some reg -> helper (Map.set map ~key:reg ~data:occ) occs pats
+       | Some id -> helper (Map.set map ~key:id ~data:occ) occs pats
   in helper row.bindings occurrences row.patterns
 
 (** Corresponds with swap_columns and swap_column_of_row (The occurrences vector
@@ -210,7 +210,7 @@ let rec decision_tree_of_matrix occurrences =
      match find_adt row.patterns with
      | All_wilds ->
         (* Case 2 *)
-        map_regs_to_occs occurrences row >>| fun map ->
+        map_ids_to_occs occurrences row >>| fun map ->
         Leaf(map, row.action)
      | Adt(alg, i) ->
         (* Case 3 *)

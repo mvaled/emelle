@@ -20,9 +20,10 @@ and decision_tree =
 and operand =
   | Bound_var of int (** On the stack frame *)
   | Cons of int
-  | Extern_var of Ident.t
+  | Extern_var of Path.t
   | Free_var of int (** In the proc's environment *)
   | Lit of Literal.t
+  | Register of int
 
 and instr =
   | Assign of operand * operand
@@ -47,7 +48,7 @@ and proc = {
   }
 
 type t = {
-    ctx : (Register.t, operand) Hashtbl.t;
+    ctx : (Ident.t, operand) Hashtbl.t;
     (** Map from registers to variables *)
     free_vars : operand Queue.t; (** Array of free variables *)
     parent : t option;
@@ -55,7 +56,7 @@ type t = {
   }
 
 let create () =
-  { ctx = Hashtbl.create (module Register)
+  { ctx = Hashtbl.create (module Ident)
   ; free_vars = Queue.create ()
   ; parent = None
   ; frame_offset = 0 }
@@ -157,7 +158,7 @@ and flatten_app self (args : operand list) (f : Lambda.t) (x : operand) =
    universally quantified if inferred. *)
 and compile_case
     : 'a . t -> Lambda.t list -> int Pattern.decision_tree
-      -> ((Register.t, Register.comparator_witness) Set.t * 'a) list
+      -> ((Ident.t, Ident.comparator_witness) Set.t * 'a) list
       -> ('a -> (instr, Message.error Sequence.t) Result.t)
       -> (instr, Message.error Sequence.t) Result.t
   = fun self scruts tree branches f ->
@@ -218,7 +219,7 @@ and instr_of_lambdacode self lambda =
      operand_of_lambdacode self lambda ~cont:(fun operand -> Ok (Load operand))
   | Lambda.Lam(reg, body) ->
      let st =
-       { ctx = Hashtbl.create (module Register)
+       { ctx = Hashtbl.create (module Ident)
        ; free_vars = Queue.create ()
        ; parent = Some self
        ; frame_offset = 0 }

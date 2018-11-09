@@ -3,7 +3,7 @@ open Base
 type t = {
     package : Package.t;
     packages : (string, Package.t) Hashtbl.t;
-    env : (Register.t, Type.t) Hashtbl.t;
+    env : (Ident.t, Type.t) Hashtbl.t;
     let_level : int;
     lam_level : int;
     tvargen : Type.vargen;
@@ -14,7 +14,7 @@ type t = {
 let create package packages =
   { package
   ; packages
-  ; env = Hashtbl.create (module Register)
+  ; env = Hashtbl.create (module Ident)
   ; let_level = 0
   ; lam_level = 0
   ; tvargen = Type.create_vargen ()
@@ -67,10 +67,10 @@ let rec kind_of_type checker ty =
      let kvar = Kind.Var (Kind.fresh_var checker.kvargen) in
      unify_kinds conkind (Kind.Poly(argkind, kvar)) >>| fun () ->
      kvar
-  | Type.Nominal id ->
-     begin match find Package.kind_of_ident checker id with
+  | Type.Nominal path ->
+     begin match find Package.kind_of_ident checker path with
      | Some kind -> Ok kind
-     | None -> Error (Sequence.return (Message.Unresolved_type id))
+     | None -> Error (Sequence.return (Message.Unresolved_type path))
      end
   | Type.Prim Type.Arrow ->
      Ok (Kind.Poly(Kind.Mono, Kind.Poly(Kind.Mono, Kind.Mono)))
@@ -98,7 +98,7 @@ let rec unify_types checker lhs rhs =
          | Error e1, Error e2 -> Error (Sequence.append e1 e2)
        end
     | Type.Nominal lstr, Type.Nominal rstr
-         when (Ident.compare lstr rstr) = 0 ->
+         when (Path.compare lstr rstr) = 0 ->
        Ok ()
     | Type.Prim lprim, Type.Prim rprim
          when Type.equal_prim lprim rprim ->
@@ -289,16 +289,16 @@ let make_impure checker ty =
 let rec infer_pattern checker map ty pat =
   let open Result.Monad_infix in
   let type_binding pat =
-    match pat.Pattern.reg with
+    match pat.Pattern.id with
     | None -> Ok map
-    | Some reg ->
+    | Some id ->
        (* The binding could already exist because of a prior OR pattern
           alternative *)
-       match Map.find map reg with
+       match Map.find map id with
        | Some ty2 ->
           unify_types checker ty ty2 >>| fun () -> map
        | None ->
-          match Map.add map ~key:reg ~data:ty with
+          match Map.add map ~key:id ~data:ty with
           | `Ok map -> Ok map
           | `Duplicate ->
              Error (Sequence.return (Message.Unreachable "infer_pattern dup"))
@@ -384,7 +384,7 @@ let rec infer_term checker =
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
          ( idx - 1
          , { Pattern.patterns = pats
-           ; bindings = Map.empty (module Register)
+           ; bindings = Map.empty (module Ident)
            ; action = idx }::matrix
          , (regs, consequent)::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
@@ -484,7 +484,7 @@ and infer_branch checker scruts pats =
        >>= fun map ->
        f map scruts pats
   in
-  let map = Map.empty (module Register) in
+  let map = Map.empty (module Ident) in
   in_new_let_level (fun checker ->
       f map scruts pats >>| fun map ->
       Map.iteri ~f:(fun ~key ~data ->

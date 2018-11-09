@@ -4,8 +4,8 @@ type command =
   | Let of
       Lambda.t list
       * int Pattern.decision_tree
-      * (Register.t, Register.comparator_witness) Set.t
-  | Let_rec of (Register.t * Lambda.t) list
+      * (Ident.t, Ident.comparator_witness) Set.t
+  | Let_rec of (Ident.t * Lambda.t) list
 
 type t =
   { desugarer : Desugar.t
@@ -63,7 +63,7 @@ let compile_item self env commands item ~cont =
      Typecheck.infer_branch self.typechecker scruts pats >>= fun () ->
      let matrix =
        [ { Pattern.patterns = pats
-         ; bindings = Map.empty (module Register)
+         ; bindings = Map.empty (module Ident)
          ; action = 0 } ]
      in
      Pattern.decision_tree_of_matrix
