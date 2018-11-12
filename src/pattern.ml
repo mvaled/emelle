@@ -20,29 +20,29 @@ type occurrence =
 
 type occurrences = occurrence list
 
-type 'a decision_tree =
-  | Ref of occurrence * 'a decision_tree
+type decision_tree =
+  | Ref of occurrence * decision_tree
   | Fail
-  | Leaf of (Ident.t, occurrence, Ident.comparator_witness) Map.t * 'a
+  | Leaf of (Ident.t, occurrence, Ident.comparator_witness) Map.t * int
     (** A leaf holds a mapping from idents to pattern match occurrences. *)
-  | Switch of occurrence * (int, 'a decision_tree) Hashtbl.t * 'a decision_tree
+  | Switch of occurrence * (int, decision_tree) Hashtbl.t * decision_tree
     (** A switch holds the scrutinee occurrence, a map from constructors to
         decision trees, and a default decision tree. *)
-  | Swap of int * 'a decision_tree
+  | Swap of int * decision_tree
 
-type 'a row = {
+type row = {
     patterns : t list;
     bindings : (Ident.t, occurrence, Ident.comparator_witness) Map.t;
     (** [bindings] holds a map from idents to already-popped occurrences. *)
-    action : 'a
+    action : int
   }
 
 (** Contract: All rows in the matrix have the same length *)
-type 'a matrix = 'a row list
+type matrix = row list
 
 (** Read into a row, and returns Some row where the indexed pattern has been
     moved to the front, or None if the index reads out of bounds. *)
-let swap_column_of_row (idx : int) (row : 'a row) =
+let swap_column_of_row (idx : int) (row : row) =
   let rec f idx left = function
     | pivot::right when idx = 0 -> Some (left, pivot, right)
     | x::next -> f (idx - 1) (x::left) next

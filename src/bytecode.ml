@@ -4,6 +4,8 @@
 
 open Base
 
+type register = int
+
 type occurrence' =
   | Constr of int * occurrence'
   | Contents of occurrence'
@@ -18,41 +20,43 @@ and decision_tree =
   | Switch of occurrence * (int * decision_tree) list * decision_tree
 
 and operand =
-  | Bound_var of int (** On the stack frame *)
   | Cons of int
   | Extern_var of Path.t
   | Free_var of int (** In the proc's environment *)
   | Lit of Literal.t
   | Register of int
 
-and instr =
+and opcode =
   | Assign of operand * operand
-  | Box of operand list
   | Call of operand * operand * operand array
     (** proc, first arg, rest args *)
   | Case of operand list * decision_tree * instr array
     (** discrs, decision tree, jump table *)
   | Fun of proc
   | Load of operand
-  | Local of instr * instr
-  | Local_rec of instr list * instr
   | Pop_match
   | Prim of string
   | Ref of operand
-  | Seq of instr * instr
+
+and instr =
+  | Box of operand list
+  | Let of register * opcode * instr
+  | Let_rec of (register * opcode) list * instr
+  | Return of opcode
+  | Seq of opcode * instr
 
 and proc = {
     env : operand array; (** The captured variables *)
-    arity : int; (** The number of parameters that the function accepts *)
+    params : register list;
     body : instr;
   }
 
 type t = {
     ctx : (Ident.t, operand) Hashtbl.t;
-    (** Map from registers to variables *)
+    (** Map from ids to variables *)
     free_vars : operand Queue.t; (** Array of free variables *)
     parent : t option;
-    mutable frame_offset : int; (** Current offset from frame pointer *)
+    mutable frame_offset : int;
   }
 
 let create () =
@@ -61,24 +65,24 @@ let create () =
   ; parent = None
   ; frame_offset = 0 }
 
-let fresh_bound_var self =
+let fresh_register self =
   let offset = self.frame_offset in
   self.frame_offset <- offset + 1;
-  Bound_var offset
+  offset
 
-let rec free_var self reg =
+let rec free_var self id =
   (* I would use Hashtbl.find_or_add here, but the callback it takes isn't
      monadic, and my code is able to fail via the result monad. *)
-  Hashtbl.find_and_call self.ctx reg
+  Hashtbl.find_and_call self.ctx id
     ~if_found:(fun x -> Ok x)
-    ~if_not_found:(fun reg ->
+    ~if_not_found:(fun id ->
       let open Result.Monad_infix in
       match self.parent with
       | Some parent ->
-         free_var parent reg >>= fun var ->
+         free_var parent id >>= fun var ->
          let _ =
            Hashtbl.add
-             self.ctx ~key:reg ~data:(Free_var (Queue.length self.free_vars))
+             self.ctx ~key:id ~data:(Free_var (Queue.length self.free_vars))
          in
          Queue.enqueue self.free_vars var;
          Ok (Free_var (Queue.length self.free_vars))
@@ -122,47 +126,38 @@ let rec convert_decision_tree self scruts = function
   | Pattern.Swap(_, tree) -> convert_decision_tree self scruts tree
 
 (** Combine statically known nested unary functions into multi-argument procs *)
-let rec proc_of_lambda self reg body =
-  let open Result.Monad_infix in
-  match Hashtbl.add self.ctx ~key:reg ~data:(fresh_bound_var self) with
+let rec proc_of_lambda self params id body ~cont =
+  let reg = fresh_register self in
+  match Hashtbl.add self.ctx ~key:id ~data:(Register reg) with
   | `Duplicate ->
      Error (Sequence.return (Message.Unreachable "Bytecode uncurry"))
   | `Ok ->
      match body.Lambda.expr with
-     | Lambda.Lam(reg, body) ->
-        proc_of_lambda self reg body
+     | Lambda.Lam(id, body) ->
+        proc_of_lambda self (reg::params) id body ~cont
      | _ ->
-        let arity = self.frame_offset + 1 in
-        instr_of_lambdacode self body >>| fun body ->
-        { env = Queue.to_array self.free_vars; arity; body }
+        instr_of_lambdacode self body ~cont:(fun opcode ->
+            cont (Fun ({ env = Queue.to_array self.free_vars
+                       ; params = List.rev params
+                       ; body = Return opcode }))
+          )
 
 (** Combine curried one-argument applications into a function call with all the
     arguments. *)
-and flatten_app self (args : operand list) (f : Lambda.t) (x : operand) =
+and flatten_app self (args : operand list) (f : Lambda.t) (x : operand) ~cont =
   match f.Lambda.expr with
   | Lambda.App(f, x') ->
      operand_of_lambdacode self x' ~cont:(fun x' ->
-         flatten_app self (x::args) f x'
+         flatten_app self (x::args) f x' ~cont
        )
   | _ ->
      operand_of_lambdacode self f ~cont:(fun f ->
-         Ok (Call(f, x, Array.of_list args))
+         cont (Call(f, x, Array.of_list args))
        )
 
 (** This function implements the compilation of a case expression, as used in
-    [instr_of_lambdacode]. It is a separate function and takes a function
-    parameter because the module compilation pipeline needs to do something
-    almost exactly the same and I didn't want to repeat such long code. *)
-(* It has an explicit type annotation because I want it to be polymorphic
-   over ['a], but it is in a let-rec that would force the ['a] to not get
-   universally quantified if inferred. *)
-and compile_case
-    : 'a . t -> Lambda.t list -> int Pattern.decision_tree
-      -> ((Ident.t, Ident.comparator_witness) Set.t * 'a) list
-      -> ('a -> (instr, Message.error Sequence.t) Result.t)
-      -> (instr, Message.error Sequence.t) Result.t
-  = fun self scruts tree branches f ->
-  let open Result.Monad_infix in
+    [instr_of_lambdacode]. *)
+and compile_case self scruts tree ~cont =
   let rec loop list = function
     | scrut::scruts ->
        operand_of_lambdacode self scrut ~cont:(fun operand ->
@@ -170,107 +165,109 @@ and compile_case
          )
     | [] ->
        let scruts = List.rev list in
-       List.fold_right ~f:(fun (regs_set, action) acc ->
-           acc >>= fun list ->
-           Set.fold_right ~f:(fun reg acc ->
-               acc >>= fun list ->
-               self.frame_offset <- self.frame_offset + 1;
-               let var = Bound_var self.frame_offset in
-               match Hashtbl.add self.ctx ~key:reg ~data:var with
-               | `Duplicate ->
-                  Error (Sequence.return
-                           (Message.Unreachable "bytecode case"))
-               | `Ok -> Ok (reg::list)
-             ) ~init:(Ok []) regs_set
-           >>= fun regs_list ->
-           let rec loop = function
-             | [] -> f action
-             | _::regs ->
-                loop regs >>| fun body -> Local(Pop_match, body)
-           in
-           loop regs_list
-           >>| fun instr ->
-           self.frame_offset <- self.frame_offset + Set.length regs_set;
-           instr::list
-         ) ~init:(Ok []) branches
-       >>| fun branches ->
        let scruts_arr = Array.of_list scruts in
        let tree = convert_decision_tree self scruts_arr tree in
-       Case(scruts, tree, Array.of_list branches)
+       cont (scruts, tree)
   in loop [] scruts
 
+and compile_branch self bindings ~cont =
+  let open Result.Monad_infix in
+  Set.fold ~f:(fun cont id () ->
+      let var = fresh_register self in
+      match Hashtbl.add self.ctx ~key:id ~data:(Register var) with
+      | `Duplicate ->
+         Error (Sequence.return
+                  (Message.Unreachable "Bytecode instr_of_lambdacode"))
+      | `Ok ->
+         cont () >>| fun body ->
+         Let(var, Pop_match, body)
+    ) ~init:cont bindings ()
+
 (** Convert a [Lambda.t] into an [instr]. *)
-and instr_of_lambdacode self lambda =
+and instr_of_lambdacode self lambda ~cont =
   let open Result.Monad_infix in
   match lambda.Lambda.expr with
   | Lambda.App(f, x) ->
-     operand_of_lambdacode self x ~cont:(fun x -> flatten_app self [] f x)
+     operand_of_lambdacode self x ~cont:(fun x ->
+         flatten_app self [] f x ~cont
+       )
   | Lambda.Assign(lhs, rhs) ->
      operand_of_lambdacode self lhs ~cont:(fun lhs ->
          operand_of_lambdacode self rhs ~cont:(fun rhs ->
-             Ok (Assign(lhs, rhs))
+             cont (Assign(lhs, rhs))
            )
        )
   | Lambda.Case(scruts, tree, branches) ->
-     compile_case self scruts tree branches (fun lambda ->
-         instr_of_lambdacode self lambda
+     compile_case self scruts tree ~cont:(fun (scruts, tree) ->
+         List.fold_right ~f:(fun (bindings, body) acc ->
+             acc >>= fun list ->
+             compile_branch self bindings ~cont:(fun () ->
+                 instr_of_lambdacode self body ~cont:(fun opcode ->
+                     Ok (Return opcode)
+                   )
+               )
+             >>| fun branch -> branch::list
+           ) ~init:(Ok []) branches
+         >>= fun branches ->
+         cont (Case(scruts, tree, Array.of_list branches))
        )
   | Lambda.Constr _ | Lambda.Extern_var _ | Lambda.Local_var _ | Lambda.Lit _ ->
-     operand_of_lambdacode self lambda ~cont:(fun operand -> Ok (Load operand))
+     operand_of_lambdacode self lambda ~cont:(fun operand ->
+         cont (Load operand)
+       )
   | Lambda.Lam(reg, body) ->
-     let st =
+     let self =
        { ctx = Hashtbl.create (module Ident)
        ; free_vars = Queue.create ()
        ; parent = Some self
        ; frame_offset = 0 }
-     in proc_of_lambda st reg body >>| fun proc -> Fun proc
+     in proc_of_lambda self [] reg body ~cont
   | Lambda.Let(lhs, rhs, body) ->
-     instr_of_lambdacode self rhs >>= fun rhs ->
-     let var = fresh_bound_var self in
-     begin match Hashtbl.add self.ctx ~key:lhs ~data:var with
-     | `Duplicate ->
-        Error (Sequence.return
-                 (Message.Unreachable "Bytecode instr_of_lambdacode"))
-     | `Ok ->
-        instr_of_lambdacode self body >>| fun body ->
-        self.frame_offset <- self.frame_offset - 1;
-        Local(rhs, body)
-     end
-  | Lambda.Let_rec(bindings, body) ->
-     compile_letrec self bindings (fun _ ->
-         instr_of_lambdacode self body
+     instr_of_lambdacode self rhs ~cont:(fun rhs ->
+         let var = fresh_register self in
+         match Hashtbl.add self.ctx ~key:lhs ~data:(Register var) with
+         | `Duplicate ->
+            Error (Sequence.return
+                     (Message.Unreachable "Bytecode instr_of_lambdacode"))
+         | `Ok ->
+            instr_of_lambdacode self body ~cont >>| fun body ->
+            Let(var, rhs, body)
        )
-  | Lambda.Prim op -> Ok (Prim op)
+  | Lambda.Let_rec(bindings, body) ->
+     compile_letrec self bindings ~cont:(fun bindings ->
+         instr_of_lambdacode self body ~cont >>| fun body ->
+         Let_rec(bindings, body)
+       )
+  | Lambda.Prim op -> cont (Prim op)
   | Lambda.Ref value ->
      operand_of_lambdacode self value ~cont:(fun value ->
-         Ok (Ref value)
+         cont (Ref value)
        )
   | Lambda.Seq(s, t) ->
-     instr_of_lambdacode self s >>= fun s ->
-     instr_of_lambdacode self t >>| fun t ->
-     Seq(s, t)
+     instr_of_lambdacode self s ~cont:(fun s ->
+         instr_of_lambdacode self t ~cont >>| fun t ->
+         Seq(s, t)
+       )
 
 (** This function implements the compilation of a let-rec expression, as used in
-    [instr_of_lambdacode]. It is a separate function and takes a function
-    parameter because the module compilation pipeline needs to do something
-    almost exactly the same and I didn't want to repeat such long code. *)
-and compile_letrec self bindings f =
+    [instr_of_lambdacode]. *)
+and compile_letrec self bindings ~cont =
   let open Result.Monad_infix in
-  List.fold ~f:(fun acc (lhs, _) ->
-      acc >>= fun () ->
-      let var = fresh_bound_var self in
-      match Hashtbl.add self.ctx ~key:lhs ~data:var with
+  List.fold ~f:(fun acc (lhs, rhs) ->
+      acc >>= fun list ->
+      let var = fresh_register self in
+      match Hashtbl.add self.ctx ~key:lhs ~data:(Register var) with
       | `Duplicate ->
          Error (Sequence.return (Message.Unreachable "Bytecode comp letrec"))
-      | `Ok -> Ok()
-    ) ~init:(Ok ()) bindings >>= fun () ->
-  List.fold_right ~f:(fun (_, rhs) acc ->
-      acc >>= fun list ->
-      instr_of_lambdacode self rhs
-      >>| fun instr -> instr::list
-    ) ~init:(Ok []) bindings >>= fun instrs ->
-  f self >>| fun body ->
-  Local_rec(instrs, body)
+      | `Ok -> Ok ((var, rhs)::list)
+    ) ~init:(Ok []) bindings >>= fun list ->
+  let rec f bindings = function
+    | (lhs, rhs)::rest ->
+       instr_of_lambdacode self rhs ~cont:(fun opcode ->
+           f ((lhs, opcode)::bindings) rest
+         )
+    | [] -> cont bindings
+  in f [] list
 
 (** [operand_of_lambdacode self lambda cont] converts [lambda] into an
     [operand], passes it to the continuation [cont], and returns an [instr]. *)
@@ -283,8 +280,8 @@ and operand_of_lambdacode self lambda ~cont =
   | Lambda.Local_var reg ->
      free_var self reg >>= fun var -> cont var
   | _ ->
-     instr_of_lambdacode self lambda >>= fun rhs ->
-     let var = fresh_bound_var self in
-     cont var >>| fun body ->
-     self.frame_offset <- self.frame_offset - 1;
-     Local(rhs, body)
+     instr_of_lambdacode self lambda ~cont:(fun rhs ->
+         let var = fresh_register self in
+         cont (Register var) >>| fun body ->
+         Let(var, rhs, body)
+       )

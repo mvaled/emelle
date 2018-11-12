@@ -2,8 +2,7 @@ open Base
 
 type command =
   | Let of
-      Lambda.t list
-      * int Pattern.decision_tree
+      Lambda.t list * Pattern.decision_tree
       * (Ident.t, Ident.comparator_witness) Set.t
   | Let_rec of (Ident.t * Lambda.t) list
 
@@ -119,6 +118,7 @@ let compile_item self env commands item ~cont =
      cont env commands
 
 let compile_items self env items exports =
+  let open Result.Monad_infix in
   let rec loop env list = function
     | item::items ->
        compile_item self env list item ~cont:(fun env list ->
@@ -126,15 +126,23 @@ let compile_items self env items exports =
          )
     | [] ->
        (* The accumulator is a function *)
-       List.fold ~f:(fun callback next self ->
-           match next with
-           | Let(scruts, tree, bindings) ->
-              Bytecode.compile_case self.bytecomp scruts tree
-                [bindings, ()] (fun () -> callback self)
-           | Let_rec(bindings) ->
-              Bytecode.compile_letrec self.bytecomp bindings
-                (fun _ -> callback self)
-         ) ~init:(fun self -> export self env exports) list self
+       let rec loop2 = function
+         | Let(scruts, tree, bindings)::rest ->
+            Bytecode.compile_case self.bytecomp scruts tree
+              ~cont:(fun (scruts, tree) ->
+                Bytecode.compile_branch self.bytecomp bindings ~cont:(fun () ->
+                    loop2 rest >>| fun body ->
+                    Bytecode.Return (Bytecode.Case(scruts, tree, [|body|]))
+                  )
+              )
+         | Let_rec(bindings)::rest ->
+            Bytecode.compile_letrec self.bytecomp bindings
+              ~cont:(fun bindings ->
+                loop2 rest >>| fun body ->
+                Bytecode.Let_rec(bindings, body)
+              )
+         | [] -> export self env exports
+       in loop2 (List.rev list)
   in loop env [] items
 
 let compile packages name ast_package =

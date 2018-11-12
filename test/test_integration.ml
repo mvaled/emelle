@@ -97,6 +97,9 @@ exception Module_fail of string
 
 let tests =
   [ "(id) let id = fun x -> x"
+  ; "(k) let k = fun x _ -> x"
+  ; "(id, k) let id = fun x -> x let k = fun x _ -> x"
+  ; "() let _ = let x = 1 in let y = x in let z = x in z"
   ; "() type Unit = Unit"
   ; "() type Option a = None | Some a"
   ; "(id2, id) let id = fun x -> x let id2 = id"
