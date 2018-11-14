@@ -377,7 +377,7 @@ let rec infer_term checker =
            ) checker >>| fun expr ->
          expr::list
        ) ~init:(Ok []) scrutinees >>= fun scruts ->
-     List.fold_right ~f:(fun (pats, regs, consequent) acc ->
+     List.fold_right ~f:(fun (pats, ids, consequent) acc ->
          acc >>= fun (idx, matrix, branches) ->
          infer_branch checker scruts pats >>= fun () ->
          infer_term checker consequent >>= fun consequent ->
@@ -386,7 +386,7 @@ let rec infer_term checker =
          , { Pattern.patterns = pats
            ; bindings = Map.empty (module Ident)
            ; action = idx }::matrix
-         , (regs, consequent)::branches )
+         , (ids, consequent)::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
      >>= fun (_, matrix, branches) ->
      Pattern.decision_tree_of_matrix
@@ -465,11 +465,11 @@ let rec infer_term checker =
      infer_term checker t >>| fun t ->
      Lambda.{ ty = t.Lambda.ty; expr = Lambda.Seq(s, t) }
 
-  | Term.Var reg ->
-     match Hashtbl.find checker.env reg with
+  | Term.Var id ->
+     match Hashtbl.find checker.env id with
      | Some ty ->
         Ok Lambda.{ ty = inst checker (Hashtbl.create (module Type.Var)) ty
-                  ; expr = Lambda.Local_var reg }
+                  ; expr = Lambda.Local_var id }
      | None -> Error (Sequence.return (Message.Unreachable "Tc expr var"))
 
 and infer_branch checker scruts pats =

@@ -51,7 +51,7 @@ let rec pattern_of_ast_pattern st map id_opt (_, node) =
   | Ast.Var name ->
      let id =
        match id_opt with
-       | Some reg -> reg
+       | Some id -> id
        | None -> fresh_ident st (Some name)
      in
      begin match Map.add map ~key:name ~data:id with
@@ -139,8 +139,8 @@ let rec term_of_expr st env (ann, node) =
        let case_term =
          Term.Case(List.map ~f:(fun x -> Term.Var x) (id::ids), cases)
        in
-       List.fold_right ~f:(fun reg body ->
-           Term.Lam(reg, body)
+       List.fold_right ~f:(fun id body ->
+           Term.Lam(id, body)
          ) ~init:case_term (id::ids)
 
     | Ast.Let(bindings, body) ->
