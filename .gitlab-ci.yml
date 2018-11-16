@@ -19,6 +19,7 @@ build:
   script:
   - dune build app/main.exe
   - dune build try/main.bc.js
+  - dune build try/stylesheet.css
   - dune build try/index.html
   artifacts:
     paths:

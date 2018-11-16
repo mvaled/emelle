@@ -3,20 +3,23 @@
   <head>
     <title>Emelle</title>
     <meta charset='utf-8'>
+    <link href='stylesheet.css' type='text/css' rel='stylesheet'>
   </head>
   <body>
     <script src='main.bc.runtime.js'></script>
     <script src='main.bc.js'></script>
     <h1>Emelle</h1>
-    <div>
-      <textarea id='editor'></textarea>
+    <div class='column'>
+      <h2>Code</h2>
+      <textarea id='editor' rows='40' cols='80'></textarea>
       <br/>
       <button id='compile'>
         Compile!
       </button>
     </div>
-    <div>
+    <div class='column'>
       <h2>Results</h2>
+      <textarea id='console' rows='40' cols='80'></textarea>
     </div>
   </body>
 </html>

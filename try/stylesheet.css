@@ -1,0 +1,14 @@
+.column {
+  display: inline-block;
+  float: left;
+  width: 50%;
+}
+
+#console {
+  background-color: black;
+  color: white;
+}
+
+textarea {
+  resize: none;
+}
