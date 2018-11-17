@@ -13,6 +13,7 @@ before_script:
 - opam install -y -q odoc
 - opam install -y -q js_of_ocaml
 - opam install -y -q js_of_ocaml-ppx
+- opam upgrade -y -q
 
 build:
   stage: build

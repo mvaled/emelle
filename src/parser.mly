@@ -45,138 +45,127 @@
 
 %%
 
-file: package EOF { $1 };
-expr_eof: expr EOF { $1 };
-monotype_eof: monotype EOF { $1 };
-adt_eof: adt EOF { $1 }
+let file :=
+  | ~ = package; EOF; { package }
 
-qual_uid:
-  | UIDENT DOT UIDENT { Ast.External($1, $3) }
-  | UIDENT { Ast.Internal $1 }
+let expr_eof :=
+  | ~ = expr; EOF; { expr }
 
-qual_lid:
-  | UIDENT DOT LIDENT { Ast.External($1, $3) }
-  | LIDENT { Ast.Internal $1 }
-  ;
+let monotype_eof :=
+  | ~ = monotype; EOF; { monotype }
 
-package:
-  | LPARENS exports = separated_list(COMMA, LIDENT) RPARENS items = list(item) {
-      Ast.{ items = items; exports = exports }
-    }
+let adt_eof :=
+  | ~ = adt; EOF; { adt }
 
-item:
-  | LET separated_list(AND, binding) { Ast.Let $2 }
-  | LET REC separated_nonempty_list(AND, rec_binding) { Ast.Let_rec $3 }
-  | TYPE adt list(AND adt { $2 }) { Ast.Type($2, $3) }
-  ;
+let qual_uid :=
+  | x = UIDENT; DOT; y = UIDENT; { Ast.External(x, y) }
+  | x = UIDENT; { Ast.Internal x }
 
-adt:
-  | UIDENT list(LIDENT) EQUALS option(BAR) separated_list(BAR, constr) {
-      Ast.{ name = $1; typeparams = $2; constrs = $5 }
-    }
-  ;
+let qual_lid :=
+  | x = UIDENT; DOT; y = LIDENT; { Ast.External(x, y) }
+  | x = LIDENT; { Ast.Internal x }
 
-constr: UIDENT separated_list(STAR, monotype) { ($1, $2) };
+let package :=
+  | LPARENS;
+      exports = separated_list(COMMA, LIDENT);
+    RPARENS;
+    items = list(item);
+      { Ast.{ items = items; exports = exports } }
 
-polytype: FORALL list(LIDENT) DOT monotype { Ast.Forall($2, $4) };
+let item :=
+  | LET; bindings = separated_list(AND, binding); { Ast.Let bindings }
+  | LET; REC; bindings = separated_nonempty_list(AND, rec_binding);
+      { Ast.Let_rec bindings }
+  | TYPE; ~ = adt; adts = list(AND; adt); { Ast.Type(adt, adts) }
 
-monotype:
-  | monotype_app ARROW monotype {
-      let loc = ($symbolstartpos, $endpos) in
-      loc, Ast.TApp((loc, Ast.TApp((loc, Ast.TArrow), $1)), $3)
-    }
-  | monotype_app { $1 }
-  ;
+let adt :=
+  | name = UIDENT;
+    params = list(LIDENT);
+    EQUALS; option(BAR);
+    constrs = separated_list(BAR, constr);
+      { Ast.{ name = name; typeparams = params; constrs = constrs } }
 
-monotype_app:
-  | monotype_app monotype_atom { ($symbolstartpos, $endpos), Ast.TApp($1, $2) }
-  | monotype_atom { $1 }
-  ;
+let constr :=
+  | name = UIDENT; tys = separated_list(STAR, monotype); { (name, tys) }
 
-monotype_atom:
-  | qual_uid { ($symbolstartpos, $endpos), (Ast.TNominal $1) }
-  | LIDENT { ($symbolstartpos, $endpos), (Ast.TVar $1) }
-  | LPARENS ARROW RPARENS { ($symbolstartpos, $endpos), Ast.TArrow }
-  | LPARENS monotype RPARENS { $2 }
-  ;
+let polytype :=
+  | FORALL; tvars = list(LIDENT); DOT; ty = monotype; { Ast.Forall(tvars, ty) }
 
-expr:
-  | expr_kw { $1 }
-  ;
+let monotype :=
+  | dom = monotype_app; ARROW; codom = monotype;
+      { let loc = ($symbolstartpos, $endpos) in
+        loc, Ast.TApp((loc, Ast.TApp((loc, Ast.TArrow), dom)), codom) }
+  | monotype_app
 
-expr_kw:
-  | CASE test = expr WITH option(BAR) cases = separated_list(BAR, case) {
-        (($symbolstartpos, $endpos), Ast.Case(test, cases))
-      }
-  | FOREIGN STRING_LIT polytype {
-        (($symbolstartpos, $endpos), Ast.Prim($2, $3))
-      }
-  | FUN option(BAR) lambda_case list(BAR lambda_case { $2 }) {
-        (($symbolstartpos, $endpos), Ast.Lam($3, $4))
-      }
-  | LET bindings = separated_list(AND, binding) IN body = expr {
-        (($symbolstartpos, $endpos), Ast.Let(bindings, body))
-      }
-  | LET REC bindings = separated_list(AND, rec_binding) IN body = expr {
-        (($symbolstartpos, $endpos), Ast.Let_rec(bindings, body))
-      }
-  | REF expr { (($symbolstartpos, $endpos), Ast.Ref $2) }
-  | expr_seq { $1 }
-  ;
+let monotype_app :=
+  | dom = monotype_app; codom = monotype_atom;
+      { ($symbolstartpos, $endpos), Ast.TApp(dom, codom) }
+  | monotype_atom
 
-case:
-  | pattern ARROW expr { ($1, $3) }
-  ;
+let monotype_atom :=
+  | x = qual_uid; { ($symbolstartpos, $endpos), (Ast.TNominal x) }
+  | x = LIDENT; { ($symbolstartpos, $endpos), (Ast.TVar x) }
+  | LPARENS; ARROW; RPARENS; { ($symbolstartpos, $endpos), Ast.TArrow }
+  | LPARENS; ~ = monotype; RPARENS; { monotype }
 
-lambda_case:
-  | pattern_2 list(pattern_2) ARROW expr { ($1, $2, $4) }
-  ;
+let expr := expr_kw
 
-binding:
-  | pattern EQUALS expr { ($1, $3) }
-  ;
+let expr_kw :=
+  | CASE; test = expr; WITH; option(BAR); cases = separated_list(BAR, case);
+      { (($symbolstartpos, $endpos), Ast.Case(test, cases)) }
+  | FOREIGN; x = STRING_LIT; y = polytype;
+      { (($symbolstartpos, $endpos), Ast.Prim(x, y)) }
+  | FUN; option(BAR); case = lambda_case; cases = list(BAR; lambda_case);
+      { (($symbolstartpos, $endpos), Ast.Lam(case, cases)) }
+  | LET; bindings = separated_list(AND, binding); IN; body = expr;
+      { (($symbolstartpos, $endpos), Ast.Let(bindings, body)) }
+  | LET; REC; bindings = separated_list(AND, rec_binding); IN; body = expr;
+      { (($symbolstartpos, $endpos), Ast.Let_rec(bindings, body)) }
+  | REF; ~ = expr; { (($symbolstartpos, $endpos), Ast.Ref expr) }
+  | expr_seq
 
-rec_binding:
-  | LIDENT EQUALS expr { ($1, $3) }
-  ;
+let case :=
+  | p = pattern; ARROW; e = expr; { (p, e) }
 
-expr_seq:
-  | expr_assn SEMICOLON expr { (($symbolstartpos, $endpos), Ast.Seq($1, $3)) }
-  | expr_assn { $1 }
-  ;
+let lambda_case :=
+  | p = pattern_2; ps = list(pattern_2); ARROW; e = expr; { (p, ps, e) }
 
-expr_assn:
-  | expr_app COLONEQUALS expr_assn {
-       (($symbolstartpos, $endpos), Ast.Assign($1, $3))
-    }
-  | expr_app { $1 }
-  ;
+let binding :=
+  | p = pattern; EQUALS; e = expr; { (p, e) }
 
-expr_app:
-  | expr_app expr_atom { (($symbolstartpos, $endpos), Ast.App($1, $2)) }
-  | expr_atom { $1 }
-  ;
+let rec_binding :=
+  | id = LIDENT; EQUALS; e = expr; { (id, e) }
 
-expr_atom:
-  | qual_lid { (($symbolstartpos, $endpos), Ast.Var $1) }
-  | qual_uid { (($symbolstartpos, $endpos), Ast.Constr $1) }
-  | FLOAT_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.Float $1)) }
-  | INT_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.Int $1)) }
-  | STRING_LIT { (($symbolstartpos, $endpos), Ast.Lit (Literal.String $1)) }
-  | LPARENS expr RPARENS { $2 }
-  ;
+let expr_seq :=
+  | s = expr_assn; SEMICOLON; t = expr;
+      { (($symbolstartpos, $endpos), Ast.Seq(s, t)) }
+  | expr_assn
 
-pattern:
-  | qual_uid nonempty_list(pattern_2) {
-        (($symbolstartpos, $endpos), Ast.Con($1, $2))
-     }
-  | REF pattern_2 { (($symbolstartpos, $endpos), Ast.Deref $2) }
-  | pattern_2 { $1 }
-  ;
+let expr_assn :=
+  | lval = expr_app; COLONEQUALS; rval = expr_assn;
+      { (($symbolstartpos, $endpos), Ast.Assign(lval, rval)) }
+  | expr_app
 
-pattern_2:
-  | qual_uid { (($symbolstartpos, $endpos), Ast.Con($1, [])) }
-  | LIDENT { (($symbolstartpos, $endpos), Ast.Var $1) }
-  | UNDERSCORE { (($symbolstartpos, $endpos), Ast.Wild) }
-  | LPARENS pattern RPARENS { $2 }
-  ;
+let expr_app :=
+  | f = expr_app; x = expr_atom; { (($symbolstartpos, $endpos), Ast.App(f, x)) }
+  | expr_atom
+
+let expr_atom :=
+  | ~ = qual_lid; { (($symbolstartpos, $endpos), Ast.Var qual_lid) }
+  | ~ = qual_uid; { (($symbolstartpos, $endpos), Ast.Constr qual_uid) }
+  | f = FLOAT_LIT; { (($symbolstartpos, $endpos), Ast.Lit (Literal.Float f)) }
+  | i = INT_LIT; { (($symbolstartpos, $endpos), Ast.Lit (Literal.Int i)) }
+  | s = STRING_LIT; { (($symbolstartpos, $endpos), Ast.Lit (Literal.String s)) }
+  | LPARENS; e = expr; RPARENS; { e }
+
+let pattern :=
+  | constr = qual_uid; pats = nonempty_list(pattern_2);
+      { (($symbolstartpos, $endpos), Ast.Con(constr, pats)) }
+  | REF; pat = pattern_2; { (($symbolstartpos, $endpos), Ast.Deref pat) }
+  | pattern_2
+
+let pattern_2 :=
+  | ~ = qual_uid; { (($symbolstartpos, $endpos), Ast.Con(qual_uid, [])) }
+  | id = LIDENT; { (($symbolstartpos, $endpos), Ast.Var id) }
+  | UNDERSCORE; { (($symbolstartpos, $endpos), Ast.Wild) }
+  | LPARENS; pat = pattern; RPARENS; { pat }
