@@ -3,7 +3,7 @@ open Emelle
 
 type phase =
   | Syntax
-  | Desugar
+  | Elab
   | Typecheck
   | End (* Used when the test should pass all the stages *)
 [@@deriving compare]
@@ -21,14 +21,14 @@ let tests =
   ; "with", Syntax
   ; "fun (some x) -> x", Syntax
   ; "fun -> x", Syntax
-  ; "f", Desugar
-  ; "f x", Desugar
-  ; "fun x -> y", Desugar
-  ; "case x with | y -> y", Desugar
-  ; "let f = fun x -> f x in f", Desugar
-  ; "let f = fun x -> x and g = f in g", Desugar
-  ; "let g = f and f = fun x -> x in g", Desugar
-  ; "case fun x -> x with | x -> x | y -> x", Desugar
+  ; "f", Elab
+  ; "f x", Elab
+  ; "fun x -> y", Elab
+  ; "case x with | y -> y", Elab
+  ; "let f = fun x -> f x in f", Elab
+  ; "let f = fun x -> x and g = f in g", Elab
+  ; "let g = f and f = fun x -> x in g", Elab
+  ; "case fun x -> x with | x -> x | y -> x", Elab
   ; "fun x -> x x", Typecheck
   ; "fun f -> let g = fun x -> f (x x) in g g", Typecheck
   ; "0 0", Typecheck
@@ -81,9 +81,9 @@ let test (input, phase) =
   let package = Package.create "" in
   let env = Env.empty (module String) in
   let packages = Hashtbl.create (module String) in
-  let desugarer = Desugar.create package packages in
+  let elaborator = Elab.create package packages in
   let next =
-    test_phase (Desugar.term_of_expr desugarer env) Desugar input next phase
+    test_phase (Elab.term_of_expr elaborator env) Elab input next phase
   in
   next >>= fun next ->
   let typechecker = Typecheck.create package packages in

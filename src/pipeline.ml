@@ -7,18 +7,18 @@ type command =
   | Let_rec of (Ident.t * Lambda.t) list
 
 type t =
-  { desugarer : Desugar.t
+  { elaborator : Elab.t
   ; typechecker : Typecheck.t
-  ; bytecomp : Bytecode.t
+  ; a_normalizer : Anf.t
   ; packages : (string, Package.t) Hashtbl.t
   ; package : Package.t }
 
 let create name packages =
   let package = Package.create name in
   let _ = Hashtbl.add packages ~key:name ~data:package in
-  { desugarer = Desugar.create package packages
+  { elaborator = Elab.create package packages
   ; typechecker = Typecheck.create package packages
-  ; bytecomp = Bytecode.create ()
+  ; a_normalizer = Anf.create ()
   ; package
   ; packages }
 
@@ -34,7 +34,7 @@ let export self env exports =
          | None ->
             Error (Sequence.return (Message.Unreachable "Pipeline export 1"))
          | Some ty ->
-            match Hashtbl.find self.bytecomp.Bytecode.ctx reg with
+            match Hashtbl.find self.a_normalizer.Anf.ctx reg with
             | None ->
                Error
                  (Sequence.return (Message.Unreachable "Pipeline export 2"))
@@ -44,13 +44,13 @@ let export self env exports =
                | None -> Error (Sequence.return (Message.Reexported_name name))
     ) ~init:(Ok (0, [])) exports
   >>| fun (_, operands) ->
-  Bytecode.Box (List.rev operands)
+  Anf.Box (List.rev operands)
 
 let compile_item self env commands item ~cont =
   let open Result.Monad_infix in
   match item with
   | Ast.Let bindings ->
-     Desugar.desugar_let_bindings self.desugarer env bindings
+     Elab.elab_let_bindings self.elaborator env bindings
      >>= fun (map, scruts, regs, pats) ->
      List.fold_right ~f:(fun scrut acc ->
          acc >>= fun list ->
@@ -81,7 +81,7 @@ let compile_item self env commands item ~cont =
      cont env ((Let(scruts, decision_tree, regs))::commands)
 
   | Ast.Let_rec bindings ->
-     Desugar.desugar_rec_bindings self.desugarer env bindings
+     Elab.elab_rec_bindings self.elaborator env bindings
      >>= fun (env, bindings) ->
      Typecheck.infer_rec_bindings self.typechecker bindings
      >>= fun bindings ->
@@ -128,18 +128,18 @@ let compile_items self env items exports =
        (* The accumulator is a function *)
        let rec loop2 = function
          | Let(scruts, tree, bindings)::rest ->
-            Bytecode.compile_case self.bytecomp scruts tree
+            Anf.compile_case self.a_normalizer scruts tree
               ~cont:(fun (scruts, tree) ->
-                Bytecode.compile_branch self.bytecomp bindings ~cont:(fun () ->
+                Anf.compile_branch self.a_normalizer bindings ~cont:(fun () ->
                     loop2 rest >>| fun body ->
-                    Bytecode.Return (Bytecode.Case(scruts, tree, [|body|]))
+                    Anf.Return (Anf.Case(scruts, tree, [|body|]))
                   )
               )
          | Let_rec(bindings)::rest ->
-            Bytecode.compile_letrec self.bytecomp bindings
+            Anf.compile_letrec self.a_normalizer bindings
               ~cont:(fun bindings ->
                 loop2 rest >>| fun body ->
-                Bytecode.Let_rec(bindings, body)
+                Anf.Let_rec(bindings, body)
               )
          | [] -> export self env exports
        in loop2 (List.rev list)

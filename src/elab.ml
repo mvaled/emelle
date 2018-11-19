@@ -161,14 +161,14 @@ let rec term_of_expr st env (ann, node) =
           evaluate and match with its LHS pattern from top to bottom, but with
           the case desugar, all of the RHS expressions evaluate before any of
           them match with the LHS pattern. Is this desugar sensible? *)
-       desugar_let_bindings st env bindings
+       elab_let_bindings st env bindings
        >>= fun (map, scruts, ids, pats) ->
        Env.in_scope_with (fun env -> term_of_expr st env body) map env
        >>| fun body -> Term.Case(scruts, [pats, ids, body])
 
     | Ast.Let_rec(bindings, body) ->
        Env.in_scope (fun env ->
-           desugar_rec_bindings st env bindings >>= fun (env, bindings) ->
+           elab_rec_bindings st env bindings >>= fun (env, bindings) ->
            term_of_expr st env body >>| fun body ->
            Term.Let_rec(bindings, body)
          ) env
@@ -201,7 +201,7 @@ let rec term_of_expr st env (ann, node) =
 
   in term >>| fun term -> (Term.Ann { ann = ann; term = term })
 
-and desugar_rec_bindings self env bindings =
+and elab_rec_bindings self env bindings =
   let open Result.Monad_infix in
   let bindings =
     List.fold_right ~f:(fun (str, expr) acc ->
@@ -220,7 +220,7 @@ and desugar_rec_bindings self env bindings =
     ) ~init:(Ok []) bindings
   >>| fun bindings -> (env, bindings)
 
-and desugar_let_bindings self env bindings =
+and elab_let_bindings self env bindings =
   let open Result.Monad_infix in
   let f map (pat, expr) =
     pattern_of_ast_pattern self map None pat

@@ -38,7 +38,7 @@ This module defines an immutable scoped "environment" data structure for
 resolving locally defined names. It merges frames into a single tree map to
 avoid the linear chain of name lookup between frames.
 
-`Emelle.Desugar`
+`Emelle.Elab`
 
 This module converts the AST into the core form of `Emelle.Term`. It:
 
