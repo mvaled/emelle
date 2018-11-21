@@ -8,7 +8,7 @@ type t = {
 and expr =
   | App of t * t
   | Assign of t * t
-  | Case of t list * Pattern.decision_tree * (bindings * t) list
+  | Case of t list * Pattern.matrix * (bindings * t) list
   | Constr of int
   | Extern_var of Path.t
   | Lam of Ident.t * t

@@ -112,6 +112,15 @@ let tests =
   ; "() type Option a = None | Some a let return = Some"
   ; "() type Option a = None | Some a let return = fun a -> Some a"
   ; "() type Either e a = Left e | Right a let return = Right"
+  ; {|()
+
+      type Either e a = Left e | Right a
+
+      let rec f = fun
+        | (Left e) -> e
+        | (Right a) -> a
+
+     |}
   ; {|(map)
       type Option a = None | Some a
       let one =
@@ -121,7 +130,7 @@ let tests =
 
       let map = fun f opt ->
         case opt with
-          Some a -> Some (f a)
+          Some y -> Some (f y)
         | None -> None
 
       let bind = fun opt f ->
@@ -129,8 +138,9 @@ let tests =
         | Some a -> f a
         | None -> None
 
-      let flatten = fun
-        | (Some (Some a)) -> Some a
+      let flatten = fun x ->
+        case x with
+        | (Some (Some b)) -> Some b
         | _ -> None
     |}
   ; {|(x)

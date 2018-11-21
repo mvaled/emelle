@@ -2,14 +2,14 @@ open Base
 
 type command =
   | Let of
-      Lambda.t list * Pattern.decision_tree
+      Lambda.t list * Pattern.matrix
       * (Ident.t, Ident.comparator_witness) Set.t
   | Let_rec of (Ident.t * Lambda.t) list
 
 type t =
   { elaborator : Elab.t
   ; typechecker : Typecheck.t
-  ; a_normalizer : Anf.t
+  ; lowerer : Lower.t
   ; packages : (string, Package.t) Hashtbl.t
   ; package : Package.t }
 
@@ -18,7 +18,7 @@ let create name packages =
   let _ = Hashtbl.add packages ~key:name ~data:package in
   { elaborator = Elab.create package packages
   ; typechecker = Typecheck.create package packages
-  ; a_normalizer = Anf.create ()
+  ; lowerer = Lower.create ()
   ; package
   ; packages }
 
@@ -34,7 +34,7 @@ let export self env exports =
          | None ->
             Error (Sequence.return (Message.Unreachable "Pipeline export 1"))
          | Some ty ->
-            match Hashtbl.find self.a_normalizer.Anf.ctx reg with
+            match Hashtbl.find self.lowerer.Lower.ctx reg with
             | None ->
                Error
                  (Sequence.return (Message.Unreachable "Pipeline export 2"))
@@ -44,14 +44,14 @@ let export self env exports =
                | None -> Error (Sequence.return (Message.Reexported_name name))
     ) ~init:(Ok (0, [])) exports
   >>| fun (_, operands) ->
-  Anf.Box (List.rev operands)
+  Anf.Return (Anf.Box (List.rev operands))
 
 let compile_item self env commands item ~cont =
   let open Result.Monad_infix in
   match item with
   | Ast.Let bindings ->
      Elab.elab_let_bindings self.elaborator env bindings
-     >>= fun (map, scruts, regs, pats) ->
+     >>= fun (map, scruts, ids, pats) ->
      List.fold_right ~f:(fun scrut acc ->
          acc >>= fun list ->
          Typecheck.in_new_let_level (fun checker ->
@@ -62,15 +62,9 @@ let compile_item self env commands item ~cont =
      Typecheck.infer_branch self.typechecker scruts pats >>= fun () ->
      let matrix =
        [ { Pattern.patterns = pats
-         ; bindings = Map.empty (module Ident)
+         ; bindings = []
          ; action = 0 } ]
      in
-     Pattern.decision_tree_of_matrix
-       (let (occurrences, _) =
-          List.fold ~f:(fun (list, i) _ ->
-              ((Pattern.Nil i)::list, i + 1)
-            ) ~init:([], 0) scruts
-        in occurrences) matrix >>= fun decision_tree ->
      Map.fold ~f:(fun ~key:key ~data:data acc ->
          acc >>= fun env ->
          match Env.add env key data with
@@ -78,7 +72,7 @@ let compile_item self env commands item ~cont =
          | None -> Error (Sequence.return (Message.Redefined_name key))
        ) ~init:(Ok env) map
      >>= fun env ->
-     cont env ((Let(scruts, decision_tree, regs))::commands)
+     cont env ((Let(scruts, matrix, ids))::commands)
 
   | Ast.Let_rec bindings ->
      Elab.elab_rec_bindings self.elaborator env bindings
@@ -127,16 +121,16 @@ let compile_items self env items exports =
     | [] ->
        (* The accumulator is a function *)
        let rec loop2 = function
-         | Let(scruts, tree, bindings)::rest ->
-            Anf.compile_case self.a_normalizer scruts tree
+         | Let(scruts, matrix, bindings)::rest ->
+            Lower.compile_case self.lowerer scruts matrix
               ~cont:(fun (scruts, tree) ->
-                Anf.compile_branch self.a_normalizer bindings ~cont:(fun () ->
+                Lower.compile_branch self.lowerer bindings ~cont:(fun () ->
                     loop2 rest >>| fun body ->
                     Anf.Return (Anf.Case(scruts, tree, [|body|]))
                   )
               )
          | Let_rec(bindings)::rest ->
-            Anf.compile_letrec self.a_normalizer bindings
+            Lower.compile_letrec self.lowerer bindings
               ~cont:(fun bindings ->
                 loop2 rest >>| fun body ->
                 Anf.Let_rec(bindings, body)

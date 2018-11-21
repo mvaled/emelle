@@ -80,8 +80,7 @@ let rec term_of_expr st env (ann, node) =
 
     | Ast.Case(scrutinee, cases) ->
        term_of_expr st env scrutinee >>= fun scrutinee ->
-       List.fold_right
-         ~f:(fun (pat, expr) acc ->
+       List.fold_right ~f:(fun (pat, expr) acc ->
            acc >>= fun cases ->
            let map = Map.empty (module String) in
            pattern_of_ast_pattern st map None pat >>= fun (pat, map) ->
@@ -90,8 +89,8 @@ let rec term_of_expr st env (ann, node) =
              ) map env
            >>| fun body ->
            let ids =
-             Map.fold ~f:(fun ~key:_ ~data:id acc ->
-                 Set.add acc id
+             Map.fold ~f:(fun ~key:_ ~data:id set ->
+                 Set.add set id
                ) ~init:(Set.empty (module Ident)) map
            in
            ([pat], ids, body)::cases
@@ -203,16 +202,14 @@ let rec term_of_expr st env (ann, node) =
 
 and elab_rec_bindings self env bindings =
   let open Result.Monad_infix in
-  let bindings =
-    List.fold_right ~f:(fun (str, expr) acc ->
-        acc >>= fun (env, list) ->
-        let id = fresh_ident self (Some str) in
-        match Env.add env str id with
-        | Some env -> Ok (env, (id, expr)::list)
-        | None -> Error (Sequence.return (Message.Redefined_name str))
-      ) ~init:(Ok (env, [])) bindings
-  in
-  bindings >>= fun (env, bindings) ->
+  List.fold_right ~f:(fun (str, expr) acc ->
+      acc >>= fun (env, list) ->
+      let id = fresh_ident self (Some str) in
+      match Env.add env str id with
+      | Some env -> Ok (env, (id, expr)::list)
+      | None -> Error (Sequence.return (Message.Redefined_name str))
+    ) ~init:(Ok (env, [])) bindings
+  >>= fun (env, bindings) ->
   List.fold_right ~f:(fun (id, expr) acc ->
       acc >>= fun list ->
       term_of_expr self env expr >>| fun term ->
@@ -222,7 +219,7 @@ and elab_rec_bindings self env bindings =
 
 and elab_let_bindings self env bindings =
   let open Result.Monad_infix in
-  let f map (pat, expr) =
+  let helper map (pat, expr) =
     pattern_of_ast_pattern self map None pat
     >>= fun (pat, map) ->
     term_of_expr self env expr
@@ -232,7 +229,7 @@ and elab_let_bindings self env bindings =
   let map = Map.empty (module String) in
   List.fold_right ~f:(fun binding acc ->
       acc >>= fun (map, scruts, pats) ->
-      f map binding >>| fun (pat, term, map) ->
+      helper map binding >>| fun (pat, term, map) ->
       (map, term::scruts, pat::pats)
     ) ~init:(Ok (map, [], [])) bindings
   >>| fun (map, scruts, pats) ->

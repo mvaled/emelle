@@ -118,8 +118,7 @@ let rec unify_types checker lhs rhs =
     | _ -> Error (Sequence.return (Message.Type_unification_fail(lhs, rhs)))
 
 let unify_many checker ty =
-  List.fold
-    ~f:(fun acc next ->
+  List.fold ~f:(fun acc next ->
       let result = unify_types checker ty next in
       match acc, result with
       | Ok (), Ok () -> Ok ()
@@ -314,8 +313,10 @@ let rec infer_pattern checker map ty pat =
      let rec f map pats tys =
        match pats, tys with
        | [], [] -> Ok map
-       | [], _ | _, [] ->
-          Error (Sequence.return (Message.Unreachable "infer_pattern f"))
+       | [], _  ->
+          Error (Sequence.return (Message.Not_enough_fields))
+       | _, [] ->
+          Error (Sequence.return (Message.Too_many_fields))
        | pat::pats, ty::tys ->
           infer_pattern checker map ty pat >>= fun map ->
           f map pats tys
@@ -384,20 +385,13 @@ let rec infer_term checker =
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
          ( idx - 1
          , { Pattern.patterns = pats
-           ; bindings = Map.empty (module Ident)
+           ; bindings = []
            ; action = idx }::matrix
          , (ids, consequent)::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
-     >>= fun (_, matrix, branches) ->
-     Pattern.decision_tree_of_matrix
-       (let (occurrences, _) =
-          List.fold ~f:(fun (list, i) _ ->
-              ((Pattern.Nil i)::list, i + 1)
-            ) ~init:([], 0) scrutinees
-        in occurrences)
-       matrix >>| fun decision_tree ->
+     >>| fun (_, matrix, branches) ->
      { Lambda.ty = out_ty
-     ; expr = Lambda.Case(scruts, decision_tree, branches) }
+     ; expr = Lambda.Case(scruts, matrix, branches) }
 
   | Term.Constr(adt, idx) ->
      let _, product, out_ty = adt.Type.constrs.(idx) in

@@ -18,6 +18,6 @@ type 'a t =
 
 and 'a bind_group = (Ident.t * 'a t) list
 
-and reg_set = (Ident.t, Ident.comparator_witness) Set.t
+and id_set = (Ident.t, Ident.comparator_witness) Set.t
 
-and 'a branch = Pattern.t list * reg_set * 'a
+and 'a branch = Pattern.t list * id_set * 'a

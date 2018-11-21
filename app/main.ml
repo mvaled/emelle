@@ -11,9 +11,9 @@ let () =
     let env = Env.empty (module String) in
     let packages = Hashtbl.create (module String) in
     let elaborator = Elab.create package packages in
-    let result = Elab.term_of_expr elaborator env ast in
-    result >>= fun term ->
     let typechecker = Typecheck.create package packages in
+    Elab.term_of_expr elaborator env ast
+    >>= fun term ->
     Typecheck.infer_term typechecker term
     >>| fun lambda ->
     Typecheck.gen typechecker lambda.Lambda.ty

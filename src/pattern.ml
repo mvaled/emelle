@@ -1,44 +1,46 @@
 open Base
 
-type t =
-  { node : pattern
-  ; id : Ident.t option }
+type t = {
+    node : pattern;
+    id : Ident.t option
+  }
+
 and pattern =
   | Con of Type.adt * int * t list (** Constructor pattern *)
   | Deref of t
   | Or of t * t
   | Wild (** Wildcard pattern *)
 
-(** In the paper Compiling Pattern Matching to Good Decision Trees, an
-    occurrence is either empty or an integer and an occurrence, but in
-    my code, the occurrence must have an index into the pattern match
-    stack at the base case. *)
-type occurrence =
-  | Nil of int
-  | Cons of int * occurrence
-  | Contents of occurrence
-
-type occurrences = occurrence list
-
-type decision_tree =
-  | Ref of occurrence * decision_tree
-  | Fail
-  | Leaf of (Ident.t, occurrence, Ident.comparator_witness) Map.t * int
-    (** A leaf holds a mapping from idents to pattern match occurrences. *)
-  | Switch of occurrence * (int, decision_tree) Hashtbl.t * decision_tree
-    (** A switch holds the scrutinee occurrence, a map from constructors to
-        decision trees, and a default decision tree. *)
-  | Swap of int * decision_tree
-
 type row = {
     patterns : t list;
-    bindings : (Ident.t, occurrence, Ident.comparator_witness) Map.t;
+    bindings : (Ident.t * Anf.occurrence) list;
     (** [bindings] holds a map from idents to already-popped occurrences. *)
     action : int
   }
 
 (** Contract: All rows in the matrix have the same length *)
 type matrix = row list
+
+type context = {
+    leaf_gen : int ref;
+    occ_gen : int ref;
+    phis : (Ident.t, (Anf.occurrence * Anf.leaf_id) list) Hashtbl.t
+  }
+
+let create () =
+  { leaf_gen = ref 0
+  ; occ_gen = ref 0
+  ; phis = Hashtbl.create (module Ident) }
+
+let fresh_leaf ctx =
+  let id = !(ctx.leaf_gen) in
+  ctx.leaf_gen := id + 1;
+  id
+
+let fresh_occ ctx =
+  let id = !(ctx.occ_gen) in
+  ctx.occ_gen := id + 1;
+  id
 
 (** Read into a row, and returns Some row where the indexed pattern has been
     moved to the front, or None if the index reads out of bounds. *)
@@ -55,12 +57,10 @@ let swap_column_of_row (idx : int) (row : row) =
 
 (** Column-swapping operation for matrices *)
 let swap_column idx =
-  let map = Option.map in
-  let bind = Option.bind in
-  List.fold ~f:(fun acc next ->
-      bind acc ~f:(fun rows ->
-          map ~f:(fun row -> row::rows) (swap_column_of_row idx next)
-        )
+  let open Option.Monad_infix in
+  List.fold_right ~f:(fun row acc ->
+      acc >>= fun rows ->
+      swap_column_of_row idx row >>| fun row -> row::rows
     ) ~init:(Some [])
 
 type find_adt_result =
@@ -89,7 +89,7 @@ let rec specialize constr product occurrence rows =
        let bindings =
          match first_pat.id with
          | None -> row.bindings
-         | Some id -> Map.set row.bindings ~key:id ~data:occurrence
+         | Some id -> (id, occurrence)::row.bindings
        in
        let rec fill acc next = function
          | [] -> acc
@@ -134,7 +134,7 @@ let specialize_ref occurrence rows =
        let bindings =
          match id with
          | None -> row.bindings
-         | Some id -> Map.set row.bindings ~key:id ~data:occurrence
+         | Some id -> (id, occurrence)::row.bindings
        in
        match node with
        | Deref pat->
@@ -175,23 +175,28 @@ let rec default_matrix rows =
     ) ~init:(Some []) rows
 
 let map_ids_to_occs occurrences row =
-  let rec helper map occurrences list =
+  let rec helper bindings occurrences list =
     match occurrences, list with
-    | [], [] -> Ok map
+    | [], [] -> Ok bindings
     | [], _::_ ->
        Error (Sequence.return (Message.Unreachable "Too many patterns"))
     | _::_, [] ->
        Error (Sequence.return (Message.Unreachable "Too many occurrences"))
     | occ::occs, pat::pats ->
        match pat.id with
-       | None -> helper map occs pats
-       | Some id -> helper (Map.set map ~key:id ~data:occ) occs pats
+       | None -> helper bindings occs pats
+       | Some id -> helper ((id, occ)::bindings) occs pats
   in helper row.bindings occurrences row.patterns
+
+let add_phis ctx leaf_id =
+  List.iter ~f:(fun (id, occ) ->
+      Hashtbl.add_multi ctx.phis ~key:id ~data:(occ, leaf_id)
+    )
 
 (** Corresponds with swap_columns and swap_column_of_row (The occurrences vector
     is like another row) *)
 (* Maybe make function generic instead of repeating code? TODO consider later *)
-let swap_occurrences idx (occurrences : occurrence list) =
+let swap_occurrences idx occurrences =
   let rec f idx left = function
     | pivot::right when idx = 0 -> Some (left, pivot, right)
     | x::next -> f (idx - 1) (x::left) next
@@ -202,16 +207,18 @@ let swap_occurrences idx (occurrences : occurrence list) =
   | None -> None
 
 (** Compilation scheme CC *)
-let rec decision_tree_of_matrix occurrences =
+let rec decision_tree_of_matrix ctx occurrences =
   let open Result.Monad_infix in
   function
-  | [] -> Ok Fail (* Case 1 *)
+  | [] -> Ok Anf.Fail (* Case 1 *)
   | (row::_) as rows ->
      match find_adt row.patterns with
      | All_wilds ->
         (* Case 2 *)
         map_ids_to_occs occurrences row >>| fun map ->
-        Leaf(map, row.action)
+        let leaf_id = fresh_leaf ctx in
+        add_phis ctx leaf_id map;
+        Anf.Leaf(leaf_id, map, row.action)
      | Adt(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
@@ -238,26 +245,28 @@ let rec decision_tree_of_matrix occurrences =
                      let rec push_occs rest idx = function
                        | [] -> rest
                        | _::xs ->
-                          (Cons(idx, first_occ))::(push_occs rest (idx + 1) xs)
+                          { Anf.id = fresh_occ ctx
+                          ; node = Anf.Index idx
+                          ; parent = Some first_occ
+                          }::(push_occs rest (idx + 1) xs)
                      in
                      let pushed_occs = push_occs rest_occs 0 product in
-                     match
-                       specialize id product first_occ rows
-                     with
+                     match specialize id product first_occ rows with
                      | None ->
                         Error (Sequence.return
                                  (Message.Unreachable "dec tree 1"))
                      | Some matrix ->
-                        match decision_tree_of_matrix pushed_occs matrix with
+                        match
+                          decision_tree_of_matrix ctx pushed_occs matrix
+                        with
                         | Ok tree ->
                            Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
                            Ok ()
                         | Error e -> Error e
                    ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
-                 decision_tree_of_matrix rest_occs default
+                 decision_tree_of_matrix ctx rest_occs default
                  >>| fun default_tree ->
-                 let switch = Switch(first_occ, jump_tbl, default_tree) in
-                 if i = 0 then switch else Swap(i, switch)
+                 Anf.Switch(i, first_occ, jump_tbl, default_tree)
         end
      | Found_ref i ->
         match swap_occurrences i occurrences with
@@ -269,7 +278,11 @@ let rec decision_tree_of_matrix occurrences =
               match specialize_ref first_occ rows with
               | None -> Error Sequence.empty
               | Some matrix ->
-                 let occs = (Contents first_occ)::rest_occs in
-                 decision_tree_of_matrix occs matrix >>| fun tree ->
-                 let switch = Ref(first_occ, tree) in
-                 if i = 0 then switch else Swap(i, switch)
+                 let occs =
+                   { Anf.id = fresh_occ ctx
+                   ; node = Anf.Contents
+                   ; parent = Some first_occ
+                   }::rest_occs
+                 in
+                 decision_tree_of_matrix ctx occs matrix >>| fun tree ->
+                 Anf.Deref(i, first_occ, tree)
