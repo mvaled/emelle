@@ -101,17 +101,19 @@ and compile_case self scruts matrix ~cont =
        >>= fun tree -> cont (scruts, tree)
   in loop [] scruts
 
-and compile_branch self bindings ~cont =
+(** Returns a list of parameters (bound variables) of the branch sorted by
+    [Ident.t] *)
+and compile_branch self bindings =
   let open Result.Monad_infix in
-  Set.fold ~f:(fun cont id () ->
-      let var = fresh_register self in
-      match Hashtbl.add self.ctx ~key:id ~data:(Register var) with
+  Set.fold_right ~f:(fun id acc ->
+      acc >>= fun params ->
+      let param = fresh_register self in
+      match Hashtbl.add self.ctx ~key:id ~data:(Register param) with
       | `Duplicate ->
          Error (Sequence.return
                   (Message.Unreachable "Lower compile_branch"))
-      | `Ok ->
-         cont () >>| fun body -> Anf.Let(var, Anf.Pop, body)
-    ) ~init:cont bindings ()
+      | `Ok -> Ok (param::params)
+    ) ~init:(Ok []) bindings
 
 (** Convert a [Lambda.t] into an [instr]. *)
 and instr_of_lambdacode self lambda ~cont =
@@ -131,12 +133,11 @@ and instr_of_lambdacode self lambda ~cont =
      compile_case self scruts matrix ~cont:(fun (scruts, tree) ->
          List.fold_right ~f:(fun (bindings, body) acc ->
              acc >>= fun list ->
-             compile_branch self bindings ~cont:(fun () ->
-                 instr_of_lambdacode self body ~cont:(fun opcode ->
-                     Ok (Anf.Return opcode)
-                   )
+             compile_branch self bindings >>= fun params ->
+             instr_of_lambdacode self body ~cont:(fun opcode ->
+                 Ok (Anf.Return opcode)
                )
-             >>| fun branch -> branch::list
+             >>| fun body -> (params, body)::list
            ) ~init:(Ok []) branches
          >>= fun branches ->
          cont (Anf.Case(scruts, tree, Array.of_list branches))

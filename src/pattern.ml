@@ -13,7 +13,7 @@ and pattern =
 
 type row = {
     patterns : t list;
-    bindings : (Ident.t * Anf.occurrence) list;
+    bindings : (Ident.t, Anf.occurrence, Ident.comparator_witness) Map.t;
     (** [bindings] holds a map from idents to already-popped occurrences. *)
     action : int
   }
@@ -23,14 +23,12 @@ type matrix = row list
 
 type context = {
     leaf_gen : int ref;
-    occ_gen : int ref;
-    phis : (Ident.t, (Anf.occurrence * Anf.leaf_id) list) Hashtbl.t
+    occ_gen : int ref
   }
 
 let create () =
   { leaf_gen = ref 0
-  ; occ_gen = ref 0
-  ; phis = Hashtbl.create (module Ident) }
+  ; occ_gen = ref 0 }
 
 let fresh_leaf ctx =
   let id = !(ctx.leaf_gen) in
@@ -89,7 +87,7 @@ let rec specialize constr product occurrence rows =
        let bindings =
          match first_pat.id with
          | None -> row.bindings
-         | Some id -> (id, occurrence)::row.bindings
+         | Some id -> Map.set row.bindings ~key:id ~data:occurrence
        in
        let rec fill acc next = function
          | [] -> acc
@@ -134,7 +132,7 @@ let specialize_ref occurrence rows =
        let bindings =
          match id with
          | None -> row.bindings
-         | Some id -> (id, occurrence)::row.bindings
+         | Some id -> Map.set row.bindings ~key:id ~data:occurrence
        in
        match node with
        | Deref pat->
@@ -185,13 +183,8 @@ let map_ids_to_occs occurrences row =
     | occ::occs, pat::pats ->
        match pat.id with
        | None -> helper bindings occs pats
-       | Some id -> helper ((id, occ)::bindings) occs pats
+       | Some id -> helper (Map.set bindings ~key:id ~data:occ) occs pats
   in helper row.bindings occurrences row.patterns
-
-let add_phis ctx leaf_id =
-  List.iter ~f:(fun (id, occ) ->
-      Hashtbl.add_multi ctx.phis ~key:id ~data:(occ, leaf_id)
-    )
 
 (** Corresponds with swap_columns and swap_column_of_row (The occurrences vector
     is like another row) *)
@@ -217,8 +210,7 @@ let rec decision_tree_of_matrix ctx occurrences =
         (* Case 2 *)
         map_ids_to_occs occurrences row >>| fun map ->
         let leaf_id = fresh_leaf ctx in
-        add_phis ctx leaf_id map;
-        Anf.Leaf(leaf_id, map, row.action)
+        Anf.Leaf(leaf_id, Map.data map, row.action)
      | Adt(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in

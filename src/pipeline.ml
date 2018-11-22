@@ -62,7 +62,7 @@ let compile_item self env commands item ~cont =
      Typecheck.infer_branch self.typechecker scruts pats >>= fun () ->
      let matrix =
        [ { Pattern.patterns = pats
-         ; bindings = []
+         ; bindings = Map.empty (module Ident)
          ; action = 0 } ]
      in
      Map.fold ~f:(fun ~key:key ~data:data acc ->
@@ -119,15 +119,13 @@ let compile_items self env items exports =
            loop env list items
          )
     | [] ->
-       (* The accumulator is a function *)
        let rec loop2 = function
          | Let(scruts, matrix, bindings)::rest ->
             Lower.compile_case self.lowerer scruts matrix
               ~cont:(fun (scruts, tree) ->
-                Lower.compile_branch self.lowerer bindings ~cont:(fun () ->
-                    loop2 rest >>| fun body ->
-                    Anf.Return (Anf.Case(scruts, tree, [|body|]))
-                  )
+                Lower.compile_branch self.lowerer bindings >>= fun params ->
+                loop2 rest >>| fun body ->
+                Anf.Return(Anf.Case(scruts, tree, [|params, body|]))
               )
          | Let_rec(bindings)::rest ->
             Lower.compile_letrec self.lowerer bindings

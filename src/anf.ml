@@ -14,11 +14,10 @@ and opcode =
   | Box of operand list
   | Call of operand * operand * operand array
     (** proc, first arg, rest args *)
-  | Case of operand list * decision_tree * instr array
+  | Case of operand list * decision_tree * join array
     (** discrs, decision tree, jump table *)
   | Fun of proc
   | Load of operand
-  | Pop
   | Prim of string
   | Ref of operand
 
@@ -51,8 +50,14 @@ and leaf_id = int
 and decision_tree =
   | Deref of int * occurrence * decision_tree
   | Fail
-  | Leaf of leaf_id * (Ident.t * occurrence) list * int
+  | Leaf of jump
     (** A leaf holds a mapping from idents to pattern match occurrences. *)
   | Switch of int * occurrence * (int, decision_tree) Hashtbl.t * decision_tree
     (** A switch holds the swap index, the scrutinee occurrence, a map from
         constructors to decision trees, and a default decision tree. *)
+
+(** A join is like a basic block with parameters *)
+and join = register list * instr
+
+(** A jump is a branch instruction to a join with the given arguments *)
+and jump = leaf_id * occurrence list * int

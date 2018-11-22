@@ -385,7 +385,7 @@ let rec infer_term checker =
          unify_types checker consequent.Lambda.ty out_ty >>| fun () ->
          ( idx - 1
          , { Pattern.patterns = pats
-           ; bindings = []
+           ; bindings = Map.empty (module Ident)
            ; action = idx }::matrix
          , (ids, consequent)::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
