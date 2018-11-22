@@ -14,7 +14,7 @@ and opcode =
   | Box of operand list
   | Call of operand * operand * operand array
     (** proc, first arg, rest args *)
-  | Case of operand list * decision_tree * join array
+  | Case of operand list * decision_tree * join_point array
     (** discrs, decision tree, jump table *)
   | Fun of proc
   | Load of operand
@@ -56,8 +56,8 @@ and decision_tree =
     (** A switch holds the swap index, the scrutinee occurrence, a map from
         constructors to decision trees, and a default decision tree. *)
 
-(** A join is like a basic block with parameters *)
-and join = register list * instr
+(** A join point is like a basic block with parameters *)
+and join_point = register list * instr
 
 (** A jump is a branch instruction to a join with the given arguments *)
 and jump = leaf_id * occurrence list * int
