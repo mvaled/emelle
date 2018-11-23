@@ -59,8 +59,8 @@ let tests =
   ; "\"\"", End
   ; "let f = fun x y -> x; y in f", End
   ; "let assign = fun l r -> l := r in assign", End
-  ; "ref 0", End
-  ; "(ref 1) := 0", End ]
+  ; "Ref 0", End
+  ; "(Ref 1) := 0", End ]
 
 let test_phase f curr_phase input format phase =
   let result = f format in
@@ -171,11 +171,11 @@ let tests =
       let Some y = Some ""
 
       let _ =
-        let r = ref None in
+        let r = Ref None in
         r := Some 0;
         r := Some 1
 
-      let make_ref = fun x -> ref x
+      let make_ref = fun x -> Ref x
 
       let str_ref = make_ref ""
 
@@ -189,14 +189,14 @@ let tests =
 
      |}
   ; {|(x)
-      let ref x = ref 0
+      let Ref x = Ref 0
      |}
   ; {|()
       type Option a = Some a | None
 
       let id = fun x -> x
 
-      let generalize_me = id (fun x -> ref x)
+      let generalize_me = id (fun x -> Ref x)
 
       let str_ref = generalize_me "foo"
 
@@ -205,11 +205,25 @@ let tests =
   ; {|()
       type Option a = Some a | None
 
-      let generalize_me = (fun x -> x) (fun x -> ref x)
+      let generalize_me = (fun x -> x) (fun x -> Ref x)
 
       let str_ref = generalize_me "foo"
 
       let int_ref = generalize_me 0
+     |}
+  ; {|()
+      type RefProduct a b = Pair (Ref a) * (Ref b)
+
+      type Option a = None | Some a
+
+      let null_pair = Pair (Ref None) (Ref None)
+
+      let _ =
+        case null_pair with
+        | Pair l r ->
+          l := Some 0;
+          r := Some "x"
+
      |} ]
 
 let () =
@@ -220,9 +234,11 @@ let () =
       with
       | Ok _ -> ()
       | Error e ->
-         let pp = Emelle.Prettyprint.create () in
-         Sequence.iter ~f:(Emelle.Prettyprint.print_error pp) e;
-         Stdio.print_endline (Emelle.Prettyprint.to_string pp);
+         let pp = Prettyprint.create () in
+         Sequence.iter ~f:(Prettyprint.print_error pp) e;
+         Stdio.print_endline (Prettyprint.to_string pp);
+         raise (Module_fail test)
+      | exception Parser.Error ->
          raise (Module_fail test)
     ) tests
 
@@ -230,7 +246,7 @@ let tests =
   [ {|()
       type Option a = None | Some a
 
-      let r = ref None
+      let r = Ref None
 
       let _ = r := Some 0
 
@@ -239,7 +255,7 @@ let tests =
   ; {|()
       type Option a = None | Some a
 
-      let r = (fun x -> ref x) None
+      let r = (fun x -> Ref x) None
 
       let _ =
         r := Some 0;
@@ -248,12 +264,37 @@ let tests =
   ; {|()
       type Option a = None | Some a
 
-      let r = (fun _ -> ref None) 0
+      let r = (fun _ -> Ref None) 0
 
       let _ =
         r := Some 0;
         r := Some "foo"
-     |} ]
+     |}
+  ; {|()
+      type RefProduct a b = Pair (Ref a) * (Ref b)
+
+      type Option a = None | Some a
+
+      let null_pair = Pair (Ref None) (Ref None)
+
+      let _ =
+        case null_pair with
+        | Pair l r ->
+          l := Some 0;
+          l := Some "x"
+
+     |}
+  ; {|()
+      let mkRef = foreign "ref" forall a!1 . a -> Ref a
+
+      type Option a = None | Some a
+
+      let x = mkRef None
+
+      let _ = x := Some 1
+
+      let _ = x := Some "foo"
+     |}]
 
 let () =
   List.iter ~f:(fun test ->

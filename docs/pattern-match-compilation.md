@@ -6,10 +6,12 @@ in "Compiling Pattern Matching to Good Decision Trees."
     p ::= C p1 .. pN  -- Constructor pattern
           _           -- Wildcard pattern
 
-    tree = ::= Leaf of action                -- Jump to code
-               Switch of (C -> ?tree) * tree -- Switch on constructor
-               Fail                          -- Pattern match failure
-               Swap                          -- Move something to front of stack
+    tree ::= Leaf of action
+               -- Jump to code
+             Switch of int * occurrence * (C -> ?tree) * tree
+               -- Switch on constructor of the given occurrence
+             Swap
+               -- Move something to front of stack
 
 Let there be a matrix of patterns. The algorithm to compile this matrix into a
 decision tree is as follows:

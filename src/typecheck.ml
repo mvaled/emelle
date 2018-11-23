@@ -135,6 +135,7 @@ let rec normalize checker tvars (_, node) =
   | Ast.TArrow -> Ok (Type.Prim Type.Arrow)
   | Ast.TFloat -> Ok (Type.Prim Type.Float)
   | Ast.TInt -> Ok (Type.Prim Type.Int)
+  | Ast.TRef -> Ok (Type.Prim Type.Ref)
   | Ast.TNominal path ->
      let ident =
        match path with
@@ -187,6 +188,19 @@ let type_of_ast_polytype checker (Ast.Forall(typeparams, body)) =
   >>= fun (tvar_map, _) ->
   normalize checker tvar_map body
 
+let set_levels_of_tvars product =
+  let helper idx ty =
+    let rec f = function
+      | Type.App(tcon, targ) ->
+         f tcon;
+         f targ
+      | Type.Var ({ Type.purity = Type.Impure; _ } as tvar) ->
+         tvar.Type.purity <- Type.Impure;
+         tvar.Type.lam_level <- idx
+      | _ -> ()
+    in f ty
+  in List.fold ~f:(fun idx ty -> helper idx ty; idx + 1) ~init:0 product
+
 (** Convert an [Ast.adt] into a [Type.adt] *)
 let type_adt_of_ast_adt checker adt =
   let open Result.Monad_infix in
@@ -215,6 +229,7 @@ let type_adt_of_ast_adt checker adt =
              (Type.Nominal (checker.package.Package.name, adt.Ast.name))
              (List.map ~f:(fun var -> Type.Var var) tvar_list)
          in
+         let _ = set_levels_of_tvars product in
          ((name, product, out_ty)::constr_list, idx - 1)
     ) ~init:(Ok ([], List.length adt.Ast.constrs - 1)) adt.Ast.constrs
   >>| fun (constrs, _) ->

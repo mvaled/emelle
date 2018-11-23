@@ -116,6 +116,7 @@ let monotype_atom :=
   | x = qual_uid; { ($symbolstartpos, $endpos), (Ast.TNominal x) }
   | x = LIDENT; { ($symbolstartpos, $endpos), (Ast.TVar x) }
   | LPARENS; ARROW; RPARENS; { ($symbolstartpos, $endpos), Ast.TArrow }
+  | REF; { ($symbolstartpos, $endpos), Ast.TRef }
   | LPARENS; ~ = monotype; RPARENS; { monotype }
 
 let expr := expr_kw

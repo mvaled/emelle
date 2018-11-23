@@ -4,7 +4,7 @@ Emelle's type system is based on System Fw, a variation of System F with higher-
 kinded types. The Emelle typechecker performs Hindley-Milner type inference to
 determine the principle type of a term.
 
-## Vocabulary
+## Terminology
 
 - Monotype: A non-generic type
 - Polytype or type scheme: A polymorphic type
@@ -59,7 +59,7 @@ of the type of mutable bindings or not, as the bindings bound by a lambda
 expression do not represent actual memory locations, but rather get instantiated
 with fresh memory allocations upon function application.
 
-The type of `fun x -> ref x` is `forall a. a -> Ref a`. The function is a
+The type of `fun x -> ref x` is `forall a!1 . a -> Ref a`. The function is a
 syntactic value, so if it is the RHS of a let binding, the binding would get
 generalized under the value restriction. However, the type variable should also
 be generalized even when the function is part of some larger expression.
@@ -81,4 +81,16 @@ During the occurs check, Emelle adjust the lambda levels and, if the type
 variable being unified is impure, sets the purities of the type variables in the
 type expression to impure.
 
-The purity of type variables is recorded in the type scheme.
+Upon function application, the levels of the type variables in the function's
+type that are higher than the current level (meaning that they are bound by the
+function) are decremented.
+
+The purity and level of type variables is recorded in the type scheme.
+
+This idea seems to have been previously discovered and used in the SML/NJ
+compiler.
+
+See http://okmij.org/ftp/ML/generalization.html for a description of the
+level-based typechecking algorithm and
+https://core.ac.uk/download/pdf/82104448.pdf for a description of SML/NJ's
+lambda-level type variable tracking.

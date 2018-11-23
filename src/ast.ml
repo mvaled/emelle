@@ -10,6 +10,7 @@ and 'a monotype' =
   | TArrow
   | TFloat
   | TInt
+  | TRef
   | TNominal of qual_id
   | TVar of string
 

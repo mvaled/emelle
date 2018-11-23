@@ -4,7 +4,7 @@
 
   exception Error of string
 
-  let keywords =
+  let lowercase_keywords =
     Hashtbl.of_alist_exn
       (module String)
       [ "and", AND
@@ -17,11 +17,15 @@
       ; "in", IN
       ; "let", LET
       ; "rec", REC
-      ; "ref", REF
       ; "self", SELF
       ; "then", THEN
       ; "type", TYPE
       ; "with", WITH ]
+
+  let uppercase_keywords =
+    Hashtbl.of_alist_exn
+      (module String)
+      [ "Ref", REF ]
 }
 
 let whitespace = [' ' '\t']
@@ -40,6 +44,7 @@ rule expr = parse
   | '(' { LPARENS }
   | ')' { RPARENS }
   | "->" { ARROW }
+  | '!' { BANG }
   | '|' { BAR }
   | ':' { COLON }
   | "::" { COLONCOLON }
@@ -50,9 +55,13 @@ rule expr = parse
   | ';' { SEMICOLON }
   | '*' { STAR }
   | '_' { UNDERSCORE }
-  | uident as str { UIDENT str }
+  | uident as str {
+      match Hashtbl.find uppercase_keywords str with
+      | Some keyword -> keyword
+      | None -> UIDENT str
+    }
   | lident as str {
-      match Hashtbl.find keywords str with
+      match Hashtbl.find lowercase_keywords str with
       | Some keyword -> keyword
       | None -> LIDENT str
     }
