@@ -16,7 +16,8 @@ let () =
     >>= fun term ->
     Typecheck.infer_term typechecker term
     >>| fun lambda ->
-    Typecheck.gen typechecker lambda.Lambda.ty
+    Typecheck.gen typechecker lambda.Lambda.ty;
+    lambda.Lambda.ty
   with
   | Ok ty ->
      let pprinter = Prettyprint.create () in

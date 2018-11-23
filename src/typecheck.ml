@@ -21,14 +21,12 @@ let create package packages =
   ; kvargen = Kind.create_vargen () }
 
 let fresh_quant checker =
-  Type.Exists
-    { let_level = checker.let_level
-    ; lam_level = checker.lam_level }
+  Type.Exists (ref checker.let_level)
 
 let fresh_tvar ?(purity = Type.Pure) (checker : t) =
   Type.Var
     (Type.fresh_var
-       checker.tvargen purity (fresh_quant checker) Kind.Mono)
+       checker.tvargen purity (fresh_quant checker) checker.lam_level Kind.Mono)
 
 let find f st (pack_name, item_name) =
   match Hashtbl.find st.packages pack_name with
@@ -161,14 +159,20 @@ let tvars_of_typeparams checker tvar_map kinds names =
   let rec f tvar_map tvar_list kinds strs =
     match kinds, strs with
     | kind::kinds, str::strs ->
-      let tvar = Type.fresh_var checker.tvargen Type.Pure Type.Univ kind in
-      begin match Env.add tvar_map str (Type.Var tvar) with
-      | None -> Error (Sequence.return (Message.Redefined_typevar str))
-      | Some tvar_map ->
-         (* Fold RIGHT, not left! *)
-         f tvar_map tvar_list kinds strs >>| fun (tvar_map, tvar_list) ->
-         (tvar_map, tvar::tvar_list)
-      end
+       let tvar =
+         Type.fresh_var
+           checker.tvargen Type.Pure Type.Univ 0 kind
+           (* TODO: Right now, I just give all type variables in type
+              annotations a lambda level of 0, but I need to count the
+              right arrow depth *)
+       in
+       begin match Env.add tvar_map str (Type.Var tvar) with
+       | None -> Error (Sequence.return (Message.Redefined_typevar str))
+       | Some tvar_map ->
+          (* Fold RIGHT, not left! *)
+          f tvar_map tvar_list kinds strs >>| fun (tvar_map, tvar_list) ->
+          (tvar_map, tvar::tvar_list)
+       end
     | [], [] -> Ok (tvar_map, tvar_list)
     | _ -> Error Sequence.empty
   in f tvar_map [] kinds names
@@ -228,57 +232,60 @@ let in_new_lam_level f self =
     Universally quantified variables really shouldn't appear in [ty], but the
     function just ignores them. *)
 let gen checker =
-  let map = Hashtbl.create (module Type.Var) in
   let rec helper ty =
     match ty with
     | Type.App(tcon, targ) ->
-       Type.App(helper tcon, helper targ)
+       helper tcon;
+       helper targ
     | Type.Var { ty = Some ty; _ } -> helper ty
-    | Type.Var ({ ty = None; quant; kind; purity; _ } as var) ->
+    | Type.Var ({ ty = None; quant; purity; lam_level; _ } as var) ->
        begin match quant with
-       | Type.Exists levels ->
+       | Type.Exists let_level ->
           let test =
             match purity with
-            | Pure -> levels.let_level >= checker.let_level
+            | Pure -> !let_level >= checker.let_level
             | Impure ->
-               (levels.let_level >= checker.let_level) &&
-                 (levels.lam_level > checker.lam_level)
+               (!let_level >= checker.let_level) &&
+                 (lam_level > checker.lam_level)
           in
           if test then
-            Hashtbl.find_or_add map var ~default:(fun () ->
-                Type.Var
-                  (Type.fresh_var checker.tvargen purity Type.Univ kind))
-          else
-            ty
-       | _ -> ty
+            var.quant <- Type.Univ
+       | _ -> ()
        end
-    | ty -> ty
+    | _ -> ()
   in helper
 
 (** [inst checker map polyty] instantiates [polyty] by replacing universally
-    quantified type variables with type variables of level [checker.level] *)
+    quantified type variables with type variables of level
+    [checker.let_level] *)
 let inst checker map =
   let rec helper ty =
     match ty with
     | Type.App(tcon, targ) ->
        Type.App(helper tcon, helper targ)
     | Type.Var { ty = Some ty; _ } -> helper ty
-    | Type.Var ({ ty = None; quant; purity; kind; _ } as var) ->
+    | Type.Var ({ ty = None; quant; purity; kind; lam_level; _ } as var) ->
        begin match quant with
        | Type.Exists _ -> ty
        | Type.Univ ->
           Hashtbl.find_or_add map var ~default:(fun () ->
               Type.Var
                 (Type.fresh_var
-                   checker.tvargen purity (fresh_quant checker) kind)
-            )
+                   checker.tvargen purity
+                   (Type.Exists (ref checker.let_level))
+                   lam_level kind))
        end
     | _ -> ty
   in helper
 
 let make_impure checker ty =
   let tvar =
-    Type.fresh_var checker.tvargen Type.Impure (fresh_quant checker) Kind.Mono
+    Type.fresh_var
+      checker.tvargen
+      Type.Impure
+      (fresh_quant checker)
+      checker.lam_level
+      Kind.Mono
   in
   let _ = Type.occurs tvar ty in
   ()
@@ -351,6 +358,7 @@ let rec infer_term checker =
      begin match infer_term checker f, infer_term checker x with
      | (Ok f, Ok x) ->
         let var = fresh_tvar checker in
+        Type.decr_lam_levels checker.lam_level f.Lambda.ty;
         let result =
           unify_types checker f.Lambda.ty (Type.arrow x.Lambda.ty var)
         in
@@ -416,7 +424,8 @@ let rec infer_term checker =
      in_new_let_level (fun checker ->
          infer_term checker rhs
        ) checker >>= fun rhs ->
-     Hashtbl.add_exn checker.env ~key:lhs ~data:(gen checker rhs.Lambda.ty);
+     gen checker rhs.Lambda.ty;
+     Hashtbl.add_exn checker.env ~key:lhs ~data:rhs.Lambda.ty;
      infer_term checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
 
@@ -425,10 +434,9 @@ let rec infer_term checker =
      (* In the RHS of let-rec bindings, LHS names aren't quantified. Here,
         quantify them for the let-rec body. *)
      List.iter ~f:(fun (lhs, _) ->
-         Hashtbl.change checker.env lhs ~f:(function
-             | Some ty -> Some (gen checker ty)
-             | None -> None
-           )
+         match Hashtbl.find checker.env lhs with
+         | Some ty -> gen checker ty
+         | None -> ()
        ) bindings;
      infer_term checker body >>| fun body ->
      Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
@@ -482,7 +490,8 @@ and infer_branch checker scruts pats =
   in_new_let_level (fun checker ->
       f map scruts pats >>| fun map ->
       Map.iteri ~f:(fun ~key ~data ->
-          let _ = Hashtbl.add checker.env ~key ~data:(gen checker data) in
+          gen checker data;
+          let _ = Hashtbl.add checker.env ~key ~data in
           ()
         ) map
     ) checker

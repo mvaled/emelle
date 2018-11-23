@@ -244,6 +244,15 @@ let tests =
       let _ =
         r := Some 0;
         r := Some "foo"
+     |}
+  ; {|()
+      type Option a = None | Some a
+
+      let r = (fun _ -> ref None) 0
+
+      let _ =
+        r := Some 0;
+        r := Some "foo"
      |} ]
 
 let () =

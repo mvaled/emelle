@@ -3,14 +3,14 @@ open Emelle
 
 let vargen = Type.create_vargen ()
 
-let dummy_quant () = Type.Exists (Type.{ let_level = 0; lam_level = 0 })
+let dummy_quant () = Type.Exists (ref 0)
 
 let tvar1 =
   Type.fresh_var
-    vargen Type.Pure (dummy_quant ()) Kind.Mono
+    vargen Type.Pure (dummy_quant ()) 0 Kind.Mono
 let tvar2 =
   Type.fresh_var
-    vargen Type.Pure (dummy_quant ()) Kind.Mono
+    vargen Type.Pure (dummy_quant ()) 0 Kind.Mono
 
 let () =
   assert ((Type.Var.compare tvar1 tvar2) <> 0);

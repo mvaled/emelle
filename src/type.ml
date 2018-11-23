@@ -14,15 +14,10 @@ type prim =
   | String
 [@@deriving compare, sexp]
 
-type levels = {
-    mutable let_level : int;
-    mutable lam_level : int;
-  } [@@deriving sexp]
-
 (** Type [quant] describes whether a type variable is existentially quantified
     within a scope or universally quantified. *)
 type quant =
-  | Exists of levels
+  | Exists of int ref
   | Univ
 [@@deriving sexp]
 
@@ -38,6 +33,7 @@ and var =
   ; mutable quant : quant
   ; mutable ty : t option
   ; mutable purity : purity
+  ; mutable lam_level : int
   ; kind : Kind.t }
 [@@deriving sexp]
 
@@ -70,12 +66,13 @@ let equal_prim x y = (compare_prim x y) = 0
 (** [create_vargen ()] creates a fresh vargen state. *)
 let create_vargen () = { contents = 0 }
 
-let fresh_var vargen purity quant kind =
+let fresh_var vargen purity quant lam_level kind =
   vargen := !vargen + 1;
   { id = !vargen - 1
   ; ty = None
   ; quant
   ; purity
+  ; lam_level
   ; kind = kind }
 
 let arrow l r =
@@ -116,15 +113,14 @@ let rec occurs tvar ty =
   | Var { ty = Some ty; _ } -> occurs tvar ty
   | Var tvar2 ->
      begin match tvar.quant, tvar2.quant with
-     | Exists levels, Exists levels2 ->
-        if levels2.let_level > levels.let_level then (
-          levels2.let_level <- levels.let_level
+     | Exists let_level, Exists let_level2 ->
+        if !let_level2 > !let_level then (
+          let_level2 := !let_level
         );
         begin match tvar.purity with
         | Impure ->
-           if levels2.lam_level > levels.lam_level then (
-             levels2.lam_level <- levels.lam_level
-           )
+           if tvar2.lam_level > tvar.lam_level then
+             tvar2.lam_level <- tvar.lam_level
         | Pure -> ()
         end
      | _ -> ()
@@ -135,3 +131,17 @@ let rec occurs tvar ty =
      | _ -> ()
      end;
      false
+
+let rec decr_lam_levels level = function
+  | App(tcon, targ) ->
+     decr_lam_levels level tcon;
+     decr_lam_levels level targ
+  | Nominal _ -> ()
+  | Prim _ -> ()
+  | Var { ty = Some ty; _ } -> decr_lam_levels level ty
+  | Var tvar ->
+     match tvar.quant with
+     | Exists _ ->
+        if tvar.lam_level > level && tvar.lam_level > 0 then
+          tvar.lam_level <- tvar.lam_level - 1
+     | Univ -> ()
