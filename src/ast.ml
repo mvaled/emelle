@@ -13,7 +13,11 @@ and 'a monotype' =
   | TNominal of qual_id
   | TVar of string
 
-type 'a polytype = Forall of string list * 'a monotype
+type typevar_decl =
+  | Pure
+  | Impure of int
+
+type 'a polytype = Forall of (string * typevar_decl) list * 'a monotype
 
 type 'a pattern = 'a * 'a pattern'
 and 'a pattern' =

@@ -154,28 +154,30 @@ let rec normalize checker tvars (_, node) =
 let fresh_kinds_of_typeparams checker =
   List.map ~f:(fun _ -> (Kind.Var (Kind.fresh_var checker.kvargen)))
 
-let tvars_of_typeparams checker tvar_map kinds names =
+let tvars_of_typeparams checker tvar_map kinds decls =
   let open Result.Monad_infix in
-  let rec f tvar_map tvar_list kinds strs =
-    match kinds, strs with
-    | kind::kinds, str::strs ->
+  let rec f tvar_map tvar_list kinds decls =
+    match kinds, decls with
+    | kind::kinds, (str, purity)::decls ->
        let tvar =
-         Type.fresh_var
-           checker.tvargen Type.Pure Type.Univ 0 kind
-           (* TODO: Right now, I just give all type variables in type
-              annotations a lambda level of 0, but I need to count the
-              right arrow depth *)
+         match purity with
+         | Ast.Pure ->
+            Type.fresh_var
+              checker.tvargen Type.Pure Type.Univ checker.lam_level kind
+         | Ast.Impure i ->
+            Type.fresh_var
+              checker.tvargen Type.Impure Type.Univ i kind
        in
        begin match Env.add tvar_map str (Type.Var tvar) with
        | None -> Error (Sequence.return (Message.Redefined_typevar str))
        | Some tvar_map ->
           (* Fold RIGHT, not left! *)
-          f tvar_map tvar_list kinds strs >>| fun (tvar_map, tvar_list) ->
+          f tvar_map tvar_list kinds decls >>| fun (tvar_map, tvar_list) ->
           (tvar_map, tvar::tvar_list)
        end
     | [], [] -> Ok (tvar_map, tvar_list)
     | _ -> Error Sequence.empty
-  in f tvar_map [] kinds names
+  in f tvar_map [] kinds decls
 
 let type_of_ast_polytype checker (Ast.Forall(typeparams, body)) =
   let open Result.Monad_infix in
@@ -197,7 +199,8 @@ let type_adt_of_ast_adt checker adt =
       | `Duplicate -> Error (Sequence.return (Message.Redefined_constr name))
       | `Ok ->
          let tvar_map = Env.empty (module String) in
-         tvars_of_typeparams checker tvar_map kinds adt.Ast.typeparams
+         let tparams = List.map ~f:(fun x -> x, Ast.Pure) adt.Ast.typeparams in
+         tvars_of_typeparams checker tvar_map kinds tparams
          >>= fun (tvar_map, tvar_list) ->
          List.fold_right ~f:(fun ty acc ->
              acc >>= fun products ->

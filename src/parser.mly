@@ -20,6 +20,7 @@
 %token LPARENS
 %token RPARENS
 %token ARROW
+%token BANG
 %token BAR
 %token COLON
 %token COLONCOLON
@@ -88,8 +89,17 @@ let adt :=
 let constr :=
   | name = UIDENT; tys = separated_list(STAR, monotype); { (name, tys) }
 
+let tvar_decl :=
+  | id = LIDENT; opt = option(BANG; i = INT_LIT; { i });
+      { let purity =
+          match opt with
+          | None -> Ast.Pure
+          | Some i -> Ast.Impure i
+        in (id, purity) }
+
 let polytype :=
-  | FORALL; tvars = list(LIDENT); DOT; ty = monotype; { Ast.Forall(tvars, ty) }
+  | FORALL; tvars = list(tvar_decl); DOT; ty = monotype;
+      { Ast.Forall(tvars, ty) }
 
 let monotype :=
   | dom = monotype_app; ARROW; codom = monotype;
