@@ -189,7 +189,7 @@ let type_of_ast_polytype checker (Ast.Forall(typeparams, body)) =
   normalize checker tvar_map body
 
 let set_levels_of_tvars product =
-  let helper idx ty =
+  let helper idx =
     let rec f = function
       | Type.App(tcon, targ) ->
          f tcon;
@@ -198,7 +198,10 @@ let set_levels_of_tvars product =
          tvar.Type.purity <- Type.Impure;
          tvar.Type.lam_level <- idx
       | _ -> ()
-    in f ty
+    in function
+    | Type.App(Type.Prim Type.Ref, ty) ->
+       f ty
+    | _ -> ()
   in List.fold ~f:(fun idx ty -> helper idx ty; idx + 1) ~init:0 product
 
 (** Convert an [Ast.adt] into a [Type.adt] *)
@@ -266,8 +269,10 @@ let gen checker =
                (!let_level >= checker.let_level) &&
                  (lam_level > checker.lam_level)
           in
-          if test then
-            var.quant <- Type.Univ
+          if test then (
+            var.quant <- Type.Univ;
+            var.lam_level <- lam_level - checker.lam_level
+          )
        | _ -> ()
        end
     | _ -> ()
@@ -291,7 +296,7 @@ let inst checker map =
                 (Type.fresh_var
                    checker.tvargen purity
                    (Type.Exists (ref checker.let_level))
-                   lam_level kind))
+                   (checker.lam_level + lam_level) kind))
        end
     | _ -> ty
   in helper

@@ -224,6 +224,32 @@ let tests =
           l := Some 0;
           r := Some "x"
 
+     |}
+  ; {|()
+      type Nat = Z | S Nat
+
+      type Option a = None | Some a
+
+      let x = None
+
+      let _ =
+        case x with
+        | None -> 0
+        | Some Z -> 1
+
+      let _ =
+        case x with
+        | None -> 0
+        | Some None -> 1
+
+     |}
+  ; {|()
+      type Nat = Z | S Nat
+
+      let rec add = fun
+        | Z y -> y
+        | (S x) y -> add x (S y)
+
      |} ]
 
 let () =
