@@ -163,8 +163,7 @@ let tvars_of_typeparams checker tvar_map kinds decls =
        let tvar =
          match purity with
          | Ast.Pure ->
-            Type.fresh_var
-              checker.tvargen Type.Pure Type.Univ checker.lam_level kind
+            Type.fresh_var checker.tvargen Type.Pure Type.Univ 0 kind
          | Ast.Impure i ->
             Type.fresh_var
               checker.tvargen Type.Impure Type.Univ i kind
