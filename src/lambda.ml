@@ -9,7 +9,7 @@ and expr =
   | App of t * t
   | Assign of t * t
   | Case of t list * Pattern.matrix * (bindings * t) list
-  | Constr of int
+  | Constr of int * int
   | Extern_var of Path.t
   | Lam of Ident.t * t
   | Let_rec of (Ident.t * t) list * t

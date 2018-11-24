@@ -80,7 +80,7 @@ let rec kind_of_type checker ty =
   | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
   | Type.Var { ty = None; kind; _ } -> Ok kind
 
-(** [unify_types typechecker type0 type1] unifies [type1] and [type2], returning
+(** [unify_types typechecker type0 type1] unifies [type0] and [type1], returning
     a result with any unification errors. *)
 let rec unify_types checker lhs rhs =
   let open Result.Monad_infix in
@@ -426,8 +426,8 @@ let rec infer_term checker =
   | Term.Constr(adt, idx) ->
      let _, product, out_ty = adt.Type.constrs.(idx) in
      let ty = Type.curry product out_ty in
-     Ok Lambda.{ ty = inst checker (Hashtbl.create (module Type.Var)) ty
-               ; expr = Lambda.Constr(List.length product) }
+     Ok { Lambda.ty = inst checker (Hashtbl.create (module Type.Var)) ty
+        ; expr = Lambda.Constr(idx, List.length product) }
 
   | Term.Extern_var(id, ty) ->
      Ok Lambda.{ ty = inst checker (Hashtbl.create (module Type.Var)) ty

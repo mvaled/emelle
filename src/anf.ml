@@ -3,7 +3,6 @@ open Base
 type register = int
 
 and operand =
-  | Constr of int
   | Extern_var of Path.t
   | Free_var of int (** In the proc's environment *)
   | Lit of Literal.t
@@ -28,7 +27,7 @@ and instr =
   | Seq of opcode * instr
 
 and proc = {
-    env : operand array; (** The captured variables *)
+    env : operand list; (** The captured variables *)
     params : register list;
     body : instr;
   }
@@ -59,5 +58,5 @@ and decision_tree =
 (** A join point is like a basic block with parameters *)
 and join_point = register list * instr
 
-(** A jump is a branch instruction to a join with the given arguments *)
+(** A jump is a branch instruction to a join point with the given arguments *)
 and jump = leaf_id * occurrence list * int
