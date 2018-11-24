@@ -87,10 +87,28 @@ function) are decremented.
 
 The purity and level of type variables is recorded in the type scheme.
 
+The `->` kind is parameterized with a purity/mutability as well. Unifying two
+mutabilities during kind unification always chooses Mut over Const. The default
+mutability is Const. If any type variables get used mutably in any data
+constructor, the kind arrow to the right of it in the type constructor's kind
+gets marked as Mut. The `Ref` type constructor's axiomatic kind is `* -!> *`.
+
 This idea seems to have been previously discovered and used in the SML/NJ
-compiler.
+compiler as described in https://core.ac.uk/download/pdf/82104448.pdf. Both the
+Emelle type system and thie type system in the paper use the ideas of:
+
+- Distinguishing between pure and imperative type variables
+- Giving type variables a level based on the number of applications until they
+  must be monomorphic, that gets decremented upon function application
+
+However, some parts of the paper seem to be different. In particular, in Emelle,
+the level of a type variable is the same throughout the entire type scheme, and
+it is declared in the universal quantifier of the type scheme. Some types in the
+paper contain the same type variables with different levels in different places.
+I don't understand exactly what's going on, but it doesn't seem to be *exactly*
+the same typing rules as Emelle's.
+
+I also give rules for higher kinded types that the paper doesn't.
 
 See http://okmij.org/ftp/ML/generalization.html for a description of the
-level-based typechecking algorithm and
-https://core.ac.uk/download/pdf/82104448.pdf for a description of SML/NJ's
-lambda-level type variable tracking.
+level-based typechecking algorithm.

@@ -250,6 +250,26 @@ let tests =
         | Z y -> y
         | (S x) y -> add x (S y)
 
+     |}
+  ; {|()
+      type Aggregate a b c = Constr a * b * c
+
+      type Option a = None | Some a
+
+      type Unit = Unit
+
+      let x = Constr None None None
+
+      let _ =
+        case x with
+        | Constr None None (Some Unit) -> 1
+        | _ -> 0
+
+      let _ =
+        case x with
+        | Constr None None (Some None) -> 1
+        | _ -> 0
+
      |} ]
 
 let () =
@@ -320,7 +340,27 @@ let tests =
       let _ = x := Some 1
 
       let _ = x := Some "foo"
-     |}]
+     |}
+  ; {|()
+      type Aggregate a b c = Constr a * b * c
+
+      type Option a = None | Some a
+
+      type Unit = Unit
+
+      let x = Constr None None (Ref None)
+
+      let _ =
+        case x with
+        | Constr None None (Ref (Some Unit)) -> 1
+        | _ -> 0
+
+      let _ =
+        case x with
+        | Constr None None (Ref (Some None)) -> 1
+        | _ -> 0
+
+     |} ]
 
 let () =
   List.iter ~f:(fun test ->
