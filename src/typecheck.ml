@@ -33,25 +33,14 @@ let find f st (pack_name, item_name) =
   | None -> None
   | Some package -> f package item_name
 
-let most_general_mutability l r =
-  match l, r with
-  | Kind.Const, Kind.Const -> Kind.Const
-  | _ -> Kind.Mut
-
-let unify_mutabilities l r =
-  let m = most_general_mutability !l !r in
-  l := m;
-  r := m
-
 (** [unify_kinds kind1 kind2] unifies the two kinds. *)
 let rec unify_kinds l r =
   let open Result.Monad_infix in
   match l, r with
   | Kind.Mono, Kind.Mono -> Ok ()
-  | Kind.Poly(a, mut0, b), Kind.Poly(c, mut1, d) ->
+  | Kind.Poly(a, b), Kind.Poly(c, d) ->
      unify_kinds a c >>= fun () ->
-     unify_kinds b d >>| fun () ->
-     unify_mutabilities mut0 mut1
+     unify_kinds b d
   | Kind.Var { id = l; _ }, Kind.Var { id = r; _ } when l = r -> Ok ()
   | Kind.Var { kind = Some k1; _ }, k2 | k2, Kind.Var { kind = Some k1; _ } ->
      unify_kinds k1 k2
@@ -74,26 +63,24 @@ let rec kind_of_type checker ty =
      kind_of_type checker targ >>= fun argkind ->
      kind_of_type checker tcon >>= fun conkind ->
      let kvar = Kind.Var (Kind.fresh_var checker.kvargen) in
-     unify_kinds conkind (Kind.Poly(argkind, ref Kind.Const, kvar))
-     >>| fun () ->
+     unify_kinds conkind (Kind.Poly(argkind, kvar)) >>| fun () ->
      kvar
   | Type.Nominal path ->
      begin match find Package.kind_of_ident checker path with
-     | Some kind -> Ok (Kind.refresh kind)
+     | Some kind -> Ok kind
      | None -> Error (Sequence.return (Message.Unresolved_type path))
      end
   | Type.Prim Type.Arrow ->
-     Ok (Kind.Poly(Kind.Mono, ref Kind.Const,
-                   Kind.Poly(Kind.Mono, ref Kind.Const, Kind.Mono)))
+     Ok (Kind.Poly(Kind.Mono, Kind.Poly(Kind.Mono, Kind.Mono)))
   | Type.Prim Type.Char -> Ok Kind.Mono
   | Type.Prim Type.Float -> Ok Kind.Mono
   | Type.Prim Type.Int -> Ok Kind.Mono
-  | Type.Prim Type.Ref -> Ok (Kind.Poly(Kind.Mono, ref Kind.Mut, Kind.Mono))
+  | Type.Prim Type.Ref -> Ok (Kind.Poly(Kind.Mono, Kind.Mono))
   | Type.Prim Type.String -> Ok Kind.Mono
   | Type.Var { ty = Some ty; _ } -> kind_of_type checker ty
   | Type.Var { ty = None; kind; _ } -> Ok kind
 
-(** [unify_types typechecker type0 type1] unifies [type0] and [type1], returning
+(** [unify_types typechecker type0 type1] unifies [type1] and [type2], returning
     a result with any unification errors. *)
 let rec unify_types checker lhs rhs =
   let open Result.Monad_infix in
@@ -166,15 +153,13 @@ let rec normalize checker tvars (_, node) =
      | None -> Error (Sequence.return (Message.Unresolved_typevar name))
 
 let fresh_kinds_of_typeparams checker =
-  List.map ~f:(fun _ ->
-      (Kind.Var (Kind.fresh_var checker.kvargen), ref Kind.Const)
-    )
+  List.map ~f:(fun _ -> (Kind.Var (Kind.fresh_var checker.kvargen)))
 
-let tvars_of_typeparams checker tvar_map decls =
+let tvars_of_typeparams checker tvar_map kinds decls =
   let open Result.Monad_infix in
-  let rec f tvar_map tvar_list = function
-    | (str, purity)::decls ->
-       let kind = Kind.Var (Kind.fresh_var checker.kvargen) in
+  let rec f tvar_map tvar_list kinds decls =
+    match kinds, decls with
+    | kind::kinds, (str, purity)::decls ->
        let tvar =
          match purity with
          | Ast.Pure ->
@@ -187,21 +172,22 @@ let tvars_of_typeparams checker tvar_map decls =
        | None -> Error (Sequence.return (Message.Redefined_typevar str))
        | Some tvar_map ->
           (* Fold RIGHT, not left! *)
-          f tvar_map tvar_list decls >>| fun (tvar_map, tvar_list) ->
+          f tvar_map tvar_list kinds decls >>| fun (tvar_map, tvar_list) ->
           (tvar_map, tvar::tvar_list)
        end
-    | [] -> Ok (tvar_map, tvar_list)
-  in f tvar_map [] decls
+    | [], [] -> Ok (tvar_map, tvar_list)
+    | _ -> Error Sequence.empty
+  in f tvar_map [] kinds decls
 
 let type_of_ast_polytype checker (Ast.Forall(typeparams, body)) =
   let open Result.Monad_infix in
   let tvar_map = Env.empty (module String) in
-  tvars_of_typeparams checker tvar_map typeparams
+  let kinds = fresh_kinds_of_typeparams checker typeparams in
+  tvars_of_typeparams checker tvar_map kinds typeparams
   >>= fun (tvar_map, _) ->
   normalize checker tvar_map body
 
-let set_levels_of_tvars checker product =
-  let open Result.Monad_infix in
+let set_levels_of_tvars product =
   let helper idx =
     let rec f = function
       | Type.App(tcon, targ) ->
@@ -211,36 +197,11 @@ let set_levels_of_tvars checker product =
          tvar.Type.purity <- Type.Impure;
          tvar.Type.lam_level <- idx
       | _ -> ()
-    in
-    let mut = ref Kind.Const in
-    let k0 = Kind.Var (Kind.fresh_var checker.kvargen) in
-    let k1 = Kind.Var (Kind.fresh_var checker.kvargen) in
-    function
-    | Type.App(tcon, _) ->
-       kind_of_type checker tcon >>= fun k3 ->
-       unify_kinds k3 (Kind.Poly(k0, mut, k1)) >>| fun () ->
-       begin match !mut with
-       | Kind.Mut ->
-          f tcon
-       | Kind.Const -> ()
-       end
-    | _ -> Ok ()
-  in
-  List.fold ~f:(fun acc ty ->
-      acc >>= fun idx ->
-      helper idx ty >>| fun () ->
-      idx + 1
-    ) ~init:(Ok 0) product
-  >>| fun _ -> ()
-
-let rec kind_of_tvars = function
-  | [] -> Kind.Mono
-  | targ::targs ->
-     let mut =
-       match targ.Type.purity with
-       | Type.Pure -> Kind.Const
-       | Type.Impure -> Kind.Mut
-     in Kind.Poly(targ.Type.kind, ref mut, kind_of_tvars targs)
+    in function
+    | Type.App(Type.Prim Type.Ref, ty) ->
+       f ty
+    | _ -> ()
+  in List.fold ~f:(fun idx ty -> helper idx ty; idx + 1) ~init:0 product
 
 (** Convert an [Ast.adt] into a [Type.adt] *)
 let type_adt_of_ast_adt checker adt =
@@ -254,10 +215,8 @@ let type_adt_of_ast_adt checker adt =
       | `Duplicate -> Error (Sequence.return (Message.Redefined_constr name))
       | `Ok ->
          let tvar_map = Env.empty (module String) in
-         let tvar_decls =
-           List.map ~f:(fun str -> str, Ast.Pure) adt.Ast.typeparams
-         in
-         tvars_of_typeparams checker tvar_map tvar_decls
+         let tparams = List.map ~f:(fun x -> x, Ast.Pure) adt.Ast.typeparams in
+         tvars_of_typeparams checker tvar_map kinds tparams
          >>= fun (tvar_map, tvar_list) ->
          List.fold_right ~f:(fun ty acc ->
              acc >>= fun products ->
@@ -266,16 +225,13 @@ let type_adt_of_ast_adt checker adt =
              unify_kinds kind Kind.Mono >>| fun () ->
              ty::products
            ) ~init:(Ok []) product
-         >>= fun product ->
-         let targs = List.map ~f:(fun var -> Type.Var var) tvar_list in
+         >>| fun product ->
          let out_ty =
            Type.with_params
              (Type.Nominal (checker.package.Package.name, adt.Ast.name))
-             targs
+             (List.map ~f:(fun var -> Type.Var var) tvar_list)
          in
-         let kind' = kind_of_tvars tvar_list in
-         unify_kinds kind kind' >>= fun () ->
-         set_levels_of_tvars checker product >>| fun () ->
+         let _ = set_levels_of_tvars product in
          ((name, product, out_ty)::constr_list, idx - 1)
     ) ~init:(Ok ([], List.length adt.Ast.constrs - 1)) adt.Ast.constrs
   >>| fun (constrs, _) ->
