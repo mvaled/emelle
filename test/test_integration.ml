@@ -320,7 +320,52 @@ let tests =
       let _ = x := Some 1
 
       let _ = x := Some "foo"
-     |}]
+     |}
+  ; {|()
+
+      type T a = T (Ref a)
+
+      type U a = U (T a)
+
+      type V a = V (U a)
+
+      type Option a = None | Some a
+
+      let f = fun
+        | (V (U (T r))) -> r
+
+      let x = V (U (T (Ref None)))
+
+      let x' = f x
+
+      let _ =
+        x' := Some ""
+
+      let _ =
+        x := Some 1
+
+     |}
+  ; {|()
+
+      type T a = T (Ref a)
+
+      type U a = U (T a)
+
+      type V a = V (U a)
+
+      type Option a = None | Some a
+
+      let f = fun
+        | a (V (U (T r))) ->
+           r := Some a
+
+      let x = V (U (T (Ref None)))
+
+      let _ = f 1 x
+
+      let _ = f "" x
+
+     |} ]
 
 let () =
   List.iter ~f:(fun test ->
