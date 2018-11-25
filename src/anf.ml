@@ -21,9 +21,9 @@ and opcode =
   | Ref of operand
 
 and instr =
+  | Break of operand
   | Let of register * opcode * instr
   | Let_rec of (register * opcode) list * instr
-  | Return of opcode
   | Seq of opcode * instr
 
 and proc = {

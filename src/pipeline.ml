@@ -44,7 +44,7 @@ let export self env exports =
                | None -> Error (Sequence.return (Message.Reexported_name name))
     ) ~init:(Ok (0, [])) exports
   >>| fun (_, operands) ->
-  Anf.Return (Anf.Box (List.rev operands))
+  Lower.make_break self.lowerer (Anf.Box (List.rev operands))
 
 let compile_item self env commands item ~cont =
   let open Result.Monad_infix in
@@ -124,7 +124,8 @@ let compile_items self env items exports =
               ~cont:(fun (scruts, tree) ->
                 Lower.compile_branch self.lowerer bindings >>= fun params ->
                 loop2 rest >>| fun body ->
-                Anf.Return(Anf.Case(scruts, tree, [|params, body|]))
+                Lower.make_break
+                  self.lowerer (Anf.Case(scruts, tree, [|params, body|]))
               )
          | Let_rec(bindings)::rest ->
             Lower.compile_letrec self.lowerer bindings

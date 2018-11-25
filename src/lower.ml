@@ -55,6 +55,10 @@ let rec free_var self id =
          Error (Sequence.return (Message.Unreachable "Lower free_var"))
     )
 
+let make_break self instr =
+  let reg = fresh_register self in
+  Anf.Let(reg, instr, Anf.Break (Anf.Register reg))
+
 (** Combine statically known nested unary functions into multi-argument procs *)
 let rec proc_of_lambda self params id body ~cont =
   let reg = fresh_register self in
@@ -69,7 +73,7 @@ let rec proc_of_lambda self params id body ~cont =
         instr_of_lambdacode self body ~cont:(fun opcode ->
             cont (Anf.Fun ({ env = Queue.to_list self.free_vars
                            ; params = List.rev params
-                           ; body = Anf.Return opcode }))
+                           ; body = make_break self opcode }))
           )
 
 (** Combine curried one-argument applications into a function call with all the
@@ -114,7 +118,7 @@ and flatten_app self count args f x ~cont =
            let proc =
              { Anf.env = args
              ; params
-             ; body = Anf.Return(Anf.Box box_contents) }
+             ; body = make_break self (Anf.Box box_contents) }
            in Anf.Fun proc
        )
   | Lambda.Ref ->
@@ -174,7 +178,7 @@ and instr_of_lambdacode self lambda ~cont =
              acc >>= fun list ->
              compile_branch self bindings >>= fun params ->
              instr_of_lambdacode self body ~cont:(fun opcode ->
-                 Ok (Anf.Return opcode)
+                 Ok (make_break self opcode)
                )
              >>| fun body -> (params, body)::list
            ) ~init:(Ok []) branches
@@ -214,7 +218,7 @@ and instr_of_lambdacode self lambda ~cont =
      cont (Anf.Fun
              { env = []
              ; params = [0]
-             ; body = Anf.Return (Anf.Ref (Anf.Register 0)) })
+             ; body = make_break self (Anf.Ref (Anf.Register 0)) })
   | Lambda.Seq(s, t) ->
      instr_of_lambdacode self s ~cont:(fun s ->
          instr_of_lambdacode self t ~cont >>| fun t ->
@@ -256,7 +260,7 @@ and operand_of_lambdacode self lambda ~cont =
      let proc =
        { Anf.env = []
        ; params
-       ; body = Anf.Return (Anf.Box((Anf.Lit (Literal.Int tag))::vars)) }
+       ; body = make_break self (Anf.Box((Anf.Lit (Literal.Int tag))::vars)) }
      in
      let var = fresh_register self in
      cont (Anf.Register var) >>| fun body ->
