@@ -17,7 +17,7 @@ and expr =
   | Lit of Literal.t
   | Local_var of Ident.t
   | Prim of string
-  | Ref of t
+  | Ref
   | Seq of t * t
 
 and bindings = (Ident.t, Ident.comparator_witness) Set.t

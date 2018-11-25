@@ -60,7 +60,8 @@ let tests =
   ; "let f = fun x y -> x; y in f", End
   ; "let assign = fun l r -> l := r in assign", End
   ; "Ref 0", End
-  ; "(Ref 1) := 0", End ]
+  ; "(Ref 1) := 0", End
+  ; "Ref", End ]
 
 let test_phase f curr_phase input format phase =
   let result = f format in
@@ -250,6 +251,16 @@ let tests =
         | Z y -> y
         | (S x) y -> add x (S y)
 
+     |}
+  ; {|()
+      type Option a = None | Some a
+
+      let ref = Ref
+
+      let x = ref None
+
+      let _ =
+        x := Some 1
      |} ]
 
 let () =
@@ -365,6 +376,17 @@ let tests =
 
       let _ = f "" x
 
+     |}
+  ; {|()
+      type Option a = None | Some a
+
+      let ref = Ref
+
+      let x = ref None
+
+      let _ =
+        x := Some 1;
+        x := Some ""
      |} ]
 
 let () =

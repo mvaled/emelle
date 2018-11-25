@@ -478,11 +478,14 @@ let rec infer_term checker =
      { Lambda.ty = inst checker (Hashtbl.create (module Type.Var)) ty
      ; expr = Lambda.Prim op }
 
-  | Term.Ref value ->
-     infer_term checker value >>| fun value ->
-     make_impure checker value.Lambda.ty;
-     Lambda.{ ty = Type.App(Type.Prim Type.Ref, value.Lambda.ty)
-            ; expr = Lambda.Ref(value) }
+  | Term.Ref ->
+     in_new_lam_level (fun checker ->
+         let var = fresh_tvar checker in
+         make_impure checker var;
+         Ok { Lambda.ty =
+                Type.arrow var (Type.App(Type.Prim Type.Ref, var))
+            ; expr = Lambda.Ref }
+       ) checker
 
   | Term.Seq(s, t) ->
      infer_term checker s >>= fun s ->

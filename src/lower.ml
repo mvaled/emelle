@@ -117,6 +117,8 @@ and flatten_app self count args f x ~cont =
              ; body = Anf.Return(Anf.Box box_contents) }
            in Anf.Fun proc
        )
+  | Lambda.Ref ->
+     cont (Anf.Ref x)
   | _ ->
      operand_of_lambdacode self f ~cont:(fun f ->
          cont (Anf.Call(f, x, Array.of_list args))
@@ -208,10 +210,11 @@ and instr_of_lambdacode self lambda ~cont =
          Anf.Let_rec(bindings, body)
        )
   | Lambda.Prim op -> cont (Prim op)
-  | Lambda.Ref value ->
-     operand_of_lambdacode self value ~cont:(fun value ->
-         cont (Anf.Ref value)
-       )
+  | Lambda.Ref ->
+     cont (Anf.Fun
+             { env = []
+             ; params = [0]
+             ; body = Anf.Return (Anf.Ref (Anf.Register 0)) })
   | Lambda.Seq(s, t) ->
      instr_of_lambdacode self s ~cont:(fun s ->
          instr_of_lambdacode self t ~cont >>| fun t ->

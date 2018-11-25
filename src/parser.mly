@@ -132,7 +132,6 @@ let expr_kw :=
       { (($symbolstartpos, $endpos), Ast.Let(bindings, body)) }
   | LET; REC; bindings = separated_list(AND, rec_binding); IN; body = expr;
       { (($symbolstartpos, $endpos), Ast.Let_rec(bindings, body)) }
-  | REF; ~ = expr; { (($symbolstartpos, $endpos), Ast.Ref expr) }
   | expr_seq
 
 let case :=
@@ -167,6 +166,7 @@ let expr_atom :=
   | f = FLOAT_LIT; { (($symbolstartpos, $endpos), Ast.Lit (Literal.Float f)) }
   | i = INT_LIT; { (($symbolstartpos, $endpos), Ast.Lit (Literal.Int i)) }
   | s = STRING_LIT; { (($symbolstartpos, $endpos), Ast.Lit (Literal.String s)) }
+  | REF; { (($symbolstartpos, $endpos), Ast.Ref) }
   | LPARENS; e = expr; RPARENS; { e }
 
 let pattern :=
