@@ -266,8 +266,14 @@ let tests =
 let () =
   List.iter ~f:(fun test ->
       match
+        let open Result.Monad_infix in
         Parser.file Lexer.expr (Lexing.from_string test)
         |> Pipeline.compile (Hashtbl.create (module String)) "main"
+        >>| fun _ ->
+        Emelle_llvm.Codegen.with_context ~cont:(fun llctx ->
+            let gen = Emelle_llvm.Codegen.create llctx in
+            gen
+          )
       with
       | Ok _ -> ()
       | Error e ->

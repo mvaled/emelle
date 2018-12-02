@@ -1,5 +1,9 @@
 before_script:
+- wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
+# Fingerprint: 6084 F3CF 814B 57C1 CF12 EFD5 15CF 4D18 AF4F 7421
+- cat gitlab-sources.list.d > /etc/apt/sources.list.d
 - apt-get update -qq
+- apt-get install libllvm-7-ocaml-dev
 - apt-get install -qq bubblewrap
 - apt-get install -qq unzip
 - echo "" | sh <(curl -sL https://raw.githubusercontent.com/ocaml/opam/master/shell/install.sh)
@@ -14,6 +18,7 @@ before_script:
 - opam install -y -q odoc
 - opam install -y -q js_of_ocaml
 - opam install -y -q js_of_ocaml-ppx
+- opam install -y -q llvm
 - opam upgrade -y -q
 
 build:

@@ -1,0 +1,5 @@
+(library
+  (name emelle_llvm)
+  (public_name emelle.llvm)
+  (libraries base emelle llvm)
+  (preprocess (pps ppx_jane)))
