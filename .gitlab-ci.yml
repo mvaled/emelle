@@ -3,6 +3,7 @@ before_script:
 # Fingerprint: 6084 F3CF 814B 57C1 CF12 EFD5 15CF 4D18 AF4F 7421
 - cp gitlab-sources.list /etc/apt/sources.list.d
 - apt-get update -qq
+- apt-get install -qq cmake
 - apt-get install -qq libllvm-7-ocaml-dev
 - apt-get install -qq bubblewrap
 - apt-get install -qq unzip
