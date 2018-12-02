@@ -1,7 +1,7 @@
 before_script:
 - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|apt-key add -
 # Fingerprint: 6084 F3CF 814B 57C1 CF12 EFD5 15CF 4D18 AF4F 7421
-- cat gitlab-sources.list.d > /etc/apt/sources.list.d
+- cp gitlab-sources.list /etc/apt/sources.list.d
 - apt-get update -qq
 - apt-get install libllvm-7-ocaml-dev
 - apt-get install -qq bubblewrap
