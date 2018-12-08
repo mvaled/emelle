@@ -5,16 +5,9 @@ type t = {
     package : Bytecode.package;
   }
 
-let rec compile_operand self =
-  let open Result.Monad_infix in
-  function
+let rec compile_operand self = function
   | Anf.Extern_var path -> Ok (Bytecode.Extern_var path)
   | Anf.Free_var idx -> Ok (Bytecode.Free_var idx)
-  | Anf.Fun proc ->
-     compile_proc self proc >>| fun proc ->
-     let idx = Queue.length self.package.Bytecode.procs in
-     Queue.enqueue self.package.Bytecode.procs proc;
-     Bytecode.Fun idx
   | Anf.Lit lit -> Ok (Bytecode.Lit lit)
   | Anf.Register reg ->
      match Hashtbl.find self.colors reg with
@@ -47,11 +40,20 @@ and compile_opcode self =
      >>| fun args ->
      Bytecode.Call(f, arg, args)
   | Anf.Case _ -> failwith ""
-  | Anf.Load o ->
-     compile_operand self o >>| fun o -> Bytecode.Load o
+  | Anf.Fun proc ->
+     List.fold_right ~f:(fun next acc ->
+         acc >>= fun list ->
+         compile_operand self next >>| fun next ->
+         next::list
+       ) ~init:(Ok []) proc.Anf.env
+     >>= fun env ->
+     compile_proc self proc >>| fun proc ->
+     let idx = Queue.length self.package.Bytecode.procs in
+     Queue.enqueue self.package.Bytecode.procs proc;
+     Bytecode.Fun(idx, env)
+  | Anf.Load o -> compile_operand self o >>| fun o -> Bytecode.Load o
   | Anf.Prim p -> Ok (Bytecode.Prim p)
-  | Anf.Ref x ->
-     compile_operand self x >>| fun x -> Bytecode.Ref x
+  | Anf.Ref x -> compile_operand self x >>| fun x -> Bytecode.Ref x
 
 and compile_instr self instrs =
   let open Result.Monad_infix in

@@ -119,7 +119,7 @@ and flatten_app self count args f x ~cont =
              { Anf.env = args
              ; params
              ; body = make_break self (Anf.Box box_contents) }
-           in Anf.Load (Anf.Fun proc)
+           in Anf.Fun proc
        )
   | Lambda.Ref ->
      cont (Anf.Ref x)
@@ -185,11 +185,19 @@ and instr_of_lambdacode self lambda ~cont =
          >>= fun branches ->
          cont (Anf.Case(scruts, tree, Array.of_list branches))
        )
-  | Lambda.Constr _ | Lambda.Extern_var _ | Lambda.Lam _
+  | Lambda.Constr _ | Lambda.Extern_var _
   | Lambda.Local_var _ | Lambda.Lit _ ->
      operand_of_lambdacode self lambda ~cont:(fun operand ->
          cont (Anf.Load operand)
        )
+  | Lambda.Lam(reg, body) ->
+     let self =
+       { self with
+         ctx = Hashtbl.create (module Ident)
+       ; free_vars = Queue.create ()
+       ; parent = Some self
+       ; reg_gen = 0 }
+     in proc_of_lambda self [] reg body ~cont
   | Lambda.Let(lhs, rhs, body) ->
      instr_of_lambdacode self rhs ~cont:(fun rhs ->
          let var = fresh_register self in
@@ -208,10 +216,10 @@ and instr_of_lambdacode self lambda ~cont =
        )
   | Lambda.Prim op -> cont (Prim op)
   | Lambda.Ref ->
-     cont (Anf.Load (Anf.Fun
+     cont (Anf.Fun
              { env = []
              ; params = [0]
-             ; body = make_break self (Anf.Ref (Anf.Register 0)) }))
+             ; body = make_break self (Anf.Ref (Anf.Register 0)) })
   | Lambda.Seq(s, t) ->
      instr_of_lambdacode self s ~cont:(fun s ->
          instr_of_lambdacode self t ~cont >>| fun t ->
@@ -254,16 +262,11 @@ and operand_of_lambdacode self lambda ~cont =
        { Anf.env = []
        ; params
        ; body = make_break self (Anf.Box((Anf.Lit (Literal.Int tag))::vars)) }
-     in cont (Anf.Fun proc)
+     in
+     let var = fresh_register self in
+     cont (Anf.Register var) >>| fun body ->
+     Anf.Let(var, Anf.Fun proc, body)
   | Lambda.Extern_var id -> cont (Anf.Extern_var id)
-  | Lambda.Lam(reg, body) ->
-     let self =
-       { self with
-         ctx = Hashtbl.create (module Ident)
-       ; free_vars = Queue.create ()
-       ; parent = Some self
-       ; reg_gen = 0 }
-     in proc_of_lambda self [] reg body ~cont
   | Lambda.Lit lit -> cont (Anf.Lit lit)
   | Lambda.Local_var reg ->
      free_var self reg >>= fun var -> cont var

@@ -4,7 +4,6 @@ type operand =
   | Extern_var of Path.t
   | Free_var of int
   | Lit of Literal.t
-  | Fun of int
   | Stack_var of int
 
 type opcode =
@@ -13,6 +12,7 @@ type opcode =
   | Break of int
   | Call of operand * operand * operand list
   | Contents of operand
+  | Fun of int * operand list
   | Index of operand * int
   | Init
   | Load of operand
