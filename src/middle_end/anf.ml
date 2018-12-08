@@ -5,17 +5,17 @@ type register = int
 and operand =
   | Extern_var of Path.t
   | Free_var of int (** In the proc's environment *)
+  | Fun of proc
   | Lit of Literal.t
   | Register of int
 
 and opcode =
   | Assign of operand * operand
   | Box of operand list
-  | Call of operand * operand * operand array
+  | Call of operand * operand * operand list
     (** proc, first arg, rest args *)
   | Case of operand list * decision_tree * join_point array
     (** discrs, decision tree, jump table *)
-  | Fun of proc
   | Load of operand
   | Prim of string
   | Ref of operand
