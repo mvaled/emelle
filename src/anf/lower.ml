@@ -183,7 +183,7 @@ and instr_of_lambdacode self lambda ~cont =
              >>| fun body -> (params, body)::list
            ) ~init:(Ok []) branches
          >>= fun branches ->
-         cont (Anf.Case(scruts, tree, Array.of_list branches))
+         cont (Anf.Case(scruts, tree, branches))
        )
   | Lambda.Constr _ | Lambda.Extern_var _
   | Lambda.Local_var _ | Lambda.Lit _ ->

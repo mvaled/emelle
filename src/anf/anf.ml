@@ -13,7 +13,7 @@ and opcode =
   | Box of operand list
   | Call of operand * operand * operand list
     (** proc, first arg, rest args *)
-  | Case of operand list * decision_tree * join_point array
+  | Case of operand list * decision_tree * join_point list
     (** discrs, decision tree, jump table *)
   | Fun of proc
   | Load of operand

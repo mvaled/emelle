@@ -1,32 +1,38 @@
 open Base
 
-type operand =
-  | Extern_var of Path.t
-  | Free_var of int
-  | Lit of Literal.t
-  | Stack_var of int
+type cont =
+  | Block of int (** A basic block other than the entry *)
+  | Entry (** The entry basic block *)
+  | Return (** Return from the function *)
+
+type operand = Anf.operand
 
 type opcode =
   | Assign of operand * operand
   | Box of operand list
-  | Break of int
+  | Break of cont
   | Call of operand * operand * operand list
   | Contents of operand
   | Fun of int * operand list
   | Index of operand * int
-  | Init
   | Load of operand
   | Prim of string
   | Ref of operand
   | Switch of operand * int list * int
 
 type instr = {
-    dest : int option; (** Stack offset to store result *)
+    dest : int option;
     opcode : opcode;
   }
 
-type proc = {
+type basic_block = {
     instrs : instr Queue.t;
+    tail : cont;
+  }
+
+type proc = {
+    entry : basic_block;
+    blocks : basic_block Queue.t;
   }
 
 type package = {

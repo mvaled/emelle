@@ -125,7 +125,7 @@ let compile_items self env items exports =
                 Lower.compile_branch self.lowerer bindings >>= fun params ->
                 loop2 rest >>| fun body ->
                 Lower.make_break
-                  self.lowerer (Anf.Case(scruts, tree, [|params, body|]))
+                  self.lowerer (Anf.Case(scruts, tree, [params, body]))
               )
          | Let_rec(bindings)::rest ->
             Lower.compile_letrec self.lowerer bindings
