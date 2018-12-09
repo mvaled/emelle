@@ -4,6 +4,7 @@ type cont =
   | Block of int (** A basic block other than the entry *)
   | Entry (** The entry basic block *)
   | Return (** Return from the function *)
+  | Switch (** The continuation is dynamic *)
 
 type operand = Anf.operand
 
@@ -16,9 +17,9 @@ type opcode =
   | Fun of int * operand list
   | Index of operand * int
   | Load of operand
+  | Phi of (int * operand) list
   | Prim of string
   | Ref of operand
-  | Switch of operand * int list * int
 
 type instr = {
     dest : int option;
@@ -33,6 +34,7 @@ type basic_block = {
 type proc = {
     entry : basic_block;
     blocks : basic_block Queue.t;
+    return : Anf.operand;
   }
 
 type package = {

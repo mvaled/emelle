@@ -17,10 +17,10 @@ let fresh_block self ~cont =
   let open Result.Monad_infix in
   let idx = Queue.length self.blocks in
   let instrs = Queue.create () in
-  cont instrs idx >>| fun (a, tail) ->
+  cont instrs idx >>| fun (ret, tail) ->
   let block = { Ssa.instrs; tail } in
   Queue.enqueue self.blocks block;
-  a
+  ret
 
 let rec compile_opcode self anf ~cont =
   let open Result.Monad_infix in
@@ -32,31 +32,35 @@ let rec compile_opcode self anf ~cont =
   | Anf.Call(f, arg, args) ->
      cont self (Ssa.Call(f, arg, args))
   | Anf.Case(_scruts, tree, join_points) ->
-     List.fold_right ~f:(fun (_, instr) acc ->
-         acc >>= fun list ->
-         fresh_block self ~cont:(fun instrs idx ->
-             compile_instr
-               { self with
-                 instrs
-               ; curr_cont = Ssa.Block idx
-               ; cont = self.curr_cont }
-               instr
-             >>| fun tail ->
-             (idx, tail)
-           ) >>| fun idx ->
-         idx::list
-       ) ~init:(Ok []) join_points
-     >>= fun branches ->
-     fresh_block self ~cont:(fun instrs idx ->
-         compile_decision_tree self branches idx tree >>= fun phis ->
+     (* The basic block for the case expr continuation *)
+     fresh_block self ~cont:(fun cont_instrs cont_idx ->
+         List.fold_right ~f:(fun (_, instr) acc ->
+             acc >>= fun list ->
+             (* The basic block for the join point *)
+             fresh_block self ~cont:(fun branch_instrs branch_idx ->
+                 compile_instr
+                   { self with
+                     instrs = branch_instrs
+                   ; curr_cont = Ssa.Block branch_idx
+                   ; cont = Ssa.Block cont_idx }
+                   instr
+                 >>| fun (tail, phi_elem) ->
+                 ((branch_idx, phi_elem), tail)
+               ) >>| fun branch ->
+             branch::list
+           ) ~init:(Ok []) join_points
+         >>= fun branches ->
+         compile_decision_tree self cont_idx (Array.of_list branches) tree
+         >>= fun cont_from_decision_tree ->
+         (* Compile the rest of the ANF in the continuation block *)
          cont
            { self with
-             instrs
-           ; curr_cont = Ssa.Block idx
-           ; cont = self.curr_cont }
-           phis
-         >>| fun tail ->
-         (tail, tail)
+             instrs = cont_instrs
+           ; curr_cont = Ssa.Block cont_idx }
+           (Ssa.Phi branches)
+         >>| fun (tail, result) (* Tail of continuation block *) ->
+         (* Cont for origin block, cont for continuation block *)
+         ((cont_from_decision_tree, result), tail)
        )
   | Anf.Fun proc ->
      let env = proc.Anf.env in
@@ -68,11 +72,16 @@ let rec compile_opcode self anf ~cont =
   | Anf.Prim p -> cont self (Ssa.Prim p)
   | Anf.Ref x -> cont self (Ssa.Ref x)
 
-and compile_decision_tree _self _cont_idx _branches = function
-  | Anf.Deref(_, _occ, _tree) -> failwith ""
-  | Anf.Fail -> failwith ""
-  | Anf.Leaf(_id, _occs, _idx) -> failwith ""
-  | Anf.Switch(_, _occ, _trees, _tree) -> failwith ""
+and compile_decision_tree _self _cont_idx branches = function
+  | Anf.Deref(_, _occ, _tree) ->
+     failwith ""
+  | Anf.Fail ->
+     failwith ""
+  | Anf.Leaf(_id, _occs, idx) ->
+     let branch_idx, _ = branches.(idx) in
+     Ok (Ssa.Block branch_idx)
+  | Anf.Switch(_, _occ, _trees, _tree) ->
+     Ok (Ssa.Switch)
 
 and compile_instr self = function
   | Anf.Let(reg, op, next) ->
@@ -82,7 +91,7 @@ and compile_instr self = function
        )
   | Anf.Let_rec(bindings, next) ->
      (* Accumulator is a function *)
-     List.fold ~f:(fun acc (reg, op) self ->
+     List.fold_right ~f:(fun (reg, op) acc self ->
          compile_opcode self op ~cont:(fun self op ->
              Queue.enqueue self.instrs { Ssa.dest = Some reg; opcode = op };
              acc self
@@ -95,8 +104,8 @@ and compile_instr self = function
          Queue.enqueue self.instrs { Ssa.dest = None; opcode = opcode };
          compile_instr self next
        )
-  | Anf.Break _ ->
-     Ok self.cont
+  | Anf.Break operand ->
+     Ok (self.cont, operand)
 
 and compile_proc self proc =
   let open Result.Monad_infix in
@@ -109,5 +118,7 @@ and compile_proc self proc =
     ; curr_cont = Ssa.Entry
     ; cont = Ssa.Return }
   in
-  compile_instr state proc.Anf.body >>| fun tail ->
-  { Ssa.blocks; entry = { instrs; tail } }
+  compile_instr state proc.Anf.body >>| fun (tail, return) ->
+  { Ssa.blocks
+  ; entry = { instrs; tail }
+  ; return = return }
