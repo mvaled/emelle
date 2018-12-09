@@ -33,10 +33,10 @@ type basic_block = {
 
 type proc = {
     entry : basic_block;
-    blocks : basic_block Queue.t;
+    blocks : (int, basic_block, Int.comparator_witness) Map.t;
     return : Anf.operand;
   }
 
 type package = {
-    procs : proc Queue.t;
+    procs : (int, proc, Int.comparator_witness) Map.t;
   }
