@@ -8,10 +8,8 @@ in "Compiling Pattern Matching to Good Decision Trees."
 
     tree ::= Leaf of action
                -- Jump to code
-             Switch of int * occurrence * (C -> ?tree) * tree
+             Switch of occurrence * (C -> ?tree) * tree
                -- Switch on constructor of the given occurrence
-             Swap
-               -- Move something to front of stack
 
 Let there be a matrix of patterns. The algorithm to compile this matrix into a
 decision tree is as follows:
@@ -29,6 +27,10 @@ decision tree is as follows:
   a switch instruction mapping constructors to specialized matrices or the
   default matrix.
 
+The swap is entirely a compile-time construct. One keeps compile-time
+"occurrences" representing the path to a scrutinee, which get translated into
+addresses.
+
 ## Matrix specialization:
 
 Remove the rows that begin with a constructor that doesn't match. For the rows
@@ -45,11 +47,6 @@ Remove the rows that start with a constructor. For each row that starts with a
 wildcard, pop off the wildcard.
 
 This operation is akin to popping off a scrutinee that failed to match.
-
-I observe that the swap instruction index can be directly stored in the switch
-instruction. The swap is entirely a compile-time construct anyway. One keeps
-compile-time "occurrences" representing the path to a scrutinee, which get
-translated into addresses.
 
 ## Binding variables
 

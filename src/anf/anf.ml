@@ -47,16 +47,16 @@ and occurrences = occurrence list
 and leaf_id = int
 
 and decision_tree =
-  | Deref of int * occurrence * decision_tree
+  | Deref of occurrence * decision_tree
   | Fail
   | Leaf of jump
     (** A leaf holds a mapping from idents to pattern match occurrences. *)
-  | Switch of int * occurrence * (int, decision_tree) Hashtbl.t * decision_tree
-    (** A switch holds the swap index, the scrutinee occurrence, a map from
-        constructors to decision trees, and a default decision tree. *)
+  | Switch of occurrence * (int, decision_tree) Hashtbl.t * decision_tree
+    (** A switch holds the scrutinee occurrence and a map from constructors to
+        decision trees, and a default decision tree. *)
 
 (** A join point is like a basic block with parameters *)
 and join_point = register list * instr
 
 (** A jump is a branch instruction to a join point with the given arguments *)
-and jump = leaf_id * occurrence list * int
+and jump = occurrence list * int

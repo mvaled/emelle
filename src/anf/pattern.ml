@@ -22,22 +22,15 @@ type row = {
 type matrix = row list
 
 type context = {
-    leaf_gen : int ref;
-    occ_gen : int ref
+    reg_gen : int ref
   }
 
-let create () =
-  { leaf_gen = ref 0
-  ; occ_gen = ref 0 }
+let create reg_gen =
+  { reg_gen }
 
-let fresh_leaf ctx =
-  let id = !(ctx.leaf_gen) in
-  ctx.leaf_gen := id + 1;
-  id
-
-let fresh_occ ctx =
-  let id = !(ctx.occ_gen) in
-  ctx.occ_gen := id + 1;
+let fresh_reg ctx =
+  let id = !(ctx.reg_gen) in
+  ctx.reg_gen := id + 1;
   id
 
 (** Read into a row, and returns Some row where the indexed pattern has been
@@ -67,8 +60,7 @@ type find_adt_result =
   | Found_ref of int
 
 let find_adt pats =
-  let rec f i pats =
-    match pats with
+  let rec f i = function
     | [] -> All_wilds
     | {node = Con(adt, _, _); _}::_ -> Adt(adt, i)
     | {node = Deref _; _}::_ -> Found_ref i
@@ -209,8 +201,7 @@ let rec decision_tree_of_matrix ctx occurrences =
      | All_wilds ->
         (* Case 2 *)
         map_ids_to_occs occurrences row >>| fun map ->
-        let leaf_id = fresh_leaf ctx in
-        Anf.Leaf(leaf_id, Map.data map, row.action)
+        Anf.Leaf(Map.data map, row.action)
      | Adt(alg, i) ->
         (* Case 3 *)
         let jump_tbl = Hashtbl.create (module Int) in
@@ -237,7 +228,7 @@ let rec decision_tree_of_matrix ctx occurrences =
                      let rec push_occs rest idx = function
                        | [] -> rest
                        | _::xs ->
-                          { Anf.id = fresh_occ ctx
+                          { Anf.id = fresh_reg ctx
                           ; node = Anf.Index idx
                           ; parent = Some first_occ
                           }::(push_occs rest (idx + 1) xs)
@@ -258,7 +249,7 @@ let rec decision_tree_of_matrix ctx occurrences =
                    ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
                  decision_tree_of_matrix ctx rest_occs default
                  >>| fun default_tree ->
-                 Anf.Switch(i, first_occ, jump_tbl, default_tree)
+                 Anf.Switch(first_occ, jump_tbl, default_tree)
         end
      | Found_ref i ->
         match swap_occurrences i occurrences with
@@ -271,10 +262,10 @@ let rec decision_tree_of_matrix ctx occurrences =
               | None -> Error Sequence.empty
               | Some matrix ->
                  let occs =
-                   { Anf.id = fresh_occ ctx
+                   { Anf.id = fresh_reg ctx
                    ; node = Anf.Contents
                    ; parent = Some first_occ
                    }::rest_occs
                  in
                  decision_tree_of_matrix ctx occs matrix >>| fun tree ->
-                 Anf.Deref(i, first_occ, tree)
+                 Anf.Deref(first_occ, tree)

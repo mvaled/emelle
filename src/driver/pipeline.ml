@@ -18,7 +18,7 @@ let create name packages =
   let _ = Hashtbl.add packages ~key:name ~data:package in
   { elaborator = Elab.create package packages
   ; typechecker = Typecheck.create package packages
-  ; lowerer = Lower.create ()
+  ; lowerer = Lower.create None
   ; package
   ; packages }
 

@@ -10,26 +10,27 @@ type t = {
     free_vars : Anf.operand Queue.t; (** Free variables *)
     pat_ctx : Pattern.context;
     parent : t option;
-    mutable reg_gen : int;
+    reg_gen : int ref;
   }
 
-let create () =
+let create parent =
+  let reg_gen = ref 0 in
   { ctx = Hashtbl.create (module Ident)
   ; free_vars = Queue.create ()
-  ; pat_ctx = Pattern.create ()
-  ; parent = None
-  ; reg_gen = 0 }
+  ; pat_ctx = Pattern.create reg_gen
+  ; parent
+  ; reg_gen }
 
 let fresh_register self =
-  let id = self.reg_gen in
-  self.reg_gen <- id + 1;
+  let id = !(self.reg_gen) in
+  self.reg_gen := id + 1;
   id
 
 let gen_base_occs self =
   let rec helper i = function
     | [] -> []
     | _::xs ->
-       { Anf.id = Pattern.fresh_occ self.pat_ctx
+       { Anf.id = Pattern.fresh_reg self.pat_ctx
        ; node = Anf.Index i
        ; parent = None
        }::(helper (i + 1) xs)
@@ -191,13 +192,8 @@ and instr_of_lambdacode self lambda ~cont =
          cont (Anf.Load operand)
        )
   | Lambda.Lam(reg, body) ->
-     let self =
-       { self with
-         ctx = Hashtbl.create (module Ident)
-       ; free_vars = Queue.create ()
-       ; parent = Some self
-       ; reg_gen = 0 }
-     in proc_of_lambda self [] reg body ~cont
+     let self = create (Some self) in
+     proc_of_lambda self [] reg body ~cont
   | Lambda.Let(lhs, rhs, body) ->
      instr_of_lambdacode self rhs ~cont:(fun rhs ->
          let var = fresh_register self in

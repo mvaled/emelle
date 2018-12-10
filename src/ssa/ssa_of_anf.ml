@@ -78,14 +78,14 @@ let rec compile_opcode ctx anf ~cont =
   | Anf.Ref x -> cont ctx (Ssa.Ref x)
 
 and compile_decision_tree _ctx _cont_idx branches = function
-  | Anf.Deref(_, _occ, _tree) ->
+  | Anf.Deref(_occ, _tree) ->
      failwith ""
   | Anf.Fail ->
      failwith ""
-  | Anf.Leaf(_id, _occs, idx) ->
+  | Anf.Leaf(_occs, idx) ->
      let branch_idx, _ = branches.(idx) in
      Ok (Ssa.Block branch_idx)
-  | Anf.Switch(_, _occ, _trees, _tree) ->
+  | Anf.Switch(_occ, _trees, _tree) ->
      Ok (Ssa.Switch)
 
 and compile_instr ctx = function
