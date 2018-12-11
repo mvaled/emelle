@@ -13,7 +13,7 @@ and pattern =
 
 type row = {
     patterns : t list;
-    bindings : (Ident.t, Anf.occurrence, Ident.comparator_witness) Map.t;
+    bindings : (Ident.t, Anf.operand, Ident.comparator_witness) Map.t;
     (** [bindings] holds a map from idents to already-popped occurrences. *)
     action : int
   }
@@ -22,7 +22,7 @@ type row = {
 type matrix = row list
 
 type context = {
-    reg_gen : int ref
+    reg_gen : Anf.register ref
   }
 
 let create reg_gen =
@@ -192,7 +192,7 @@ let swap_occurrences idx occurrences =
   | None -> None
 
 (** Compilation scheme CC *)
-let rec decision_tree_of_matrix ctx occurrences =
+let rec decision_tree_of_matrix ctx (occurrences : Anf.operand list) =
   let open Result.Monad_infix in
   function
   | [] -> Ok Anf.Fail (* Case 1 *)
@@ -204,7 +204,6 @@ let rec decision_tree_of_matrix ctx occurrences =
         Anf.Leaf(Map.data map, row.action)
      | Adt(alg, i) ->
         (* Case 3 *)
-        let jump_tbl = Hashtbl.create (module Int) in
         begin match swap_column i rows with
         | None -> Error Sequence.empty
         | Some rows ->
@@ -215,10 +214,10 @@ let rec decision_tree_of_matrix ctx occurrences =
            | Some default ->
               match swap_occurrences i occurrences with
               | None ->
-                 Error (Sequence.return (Message.Unreachable (String.concat
-                   ["Pattern idx out of bounds: "; Int.to_string i]
-                 )))
+                 Message.unreachable
+                   ("Pattern idx out of bounds: " ^ (Int.to_string i))
               | Some (first_occ, rest_occs) ->
+                 let jump_tbl = Hashtbl.create (module Int) in
                  Array.foldi ~f:(fun id acc (_, product, _) ->
                      acc >>= fun () ->
                      (* Just like how the matched value is popped off the stack
@@ -226,24 +225,24 @@ let rec decision_tree_of_matrix ctx occurrences =
                         selected occurrence and push occurrences for its
                         subterms *)
                      let rec push_occs rest idx = function
-                       | [] -> rest
+                       | [] -> [], rest
                        | _::xs ->
-                          { Anf.id = fresh_reg ctx
-                          ; node = Anf.Index idx
-                          ; parent = Some first_occ
-                          }::(push_occs rest (idx + 1) xs)
+                          let reg = fresh_reg ctx in
+                          let (new_regs, occs) = push_occs rest (idx + 1) xs in
+                          reg::new_regs, (Anf.Register reg)::occs
                      in
-                     let pushed_occs = push_occs rest_occs 0 product in
+                     let (new_regs, pushed_occs) =
+                       push_occs rest_occs 0 product
+                     in
                      match specialize id product first_occ rows with
-                     | None ->
-                        Error (Sequence.return
-                                 (Message.Unreachable "dec tree 1"))
+                     | None -> Message.unreachable "dec tree 1"
                      | Some matrix ->
                         match
                           decision_tree_of_matrix ctx pushed_occs matrix
                         with
                         | Ok tree ->
-                           Hashtbl.add_exn ~key:id ~data:tree jump_tbl;
+                           Hashtbl.add_exn
+                             ~key:id ~data:(new_regs, tree) jump_tbl;
                            Ok ()
                         | Error e -> Error e
                    ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
@@ -261,11 +260,7 @@ let rec decision_tree_of_matrix ctx occurrences =
               match specialize_ref first_occ rows with
               | None -> Error Sequence.empty
               | Some matrix ->
-                 let occs =
-                   { Anf.id = fresh_reg ctx
-                   ; node = Anf.Contents
-                   ; parent = Some first_occ
-                   }::rest_occs
-                 in
+                 let reg = fresh_reg ctx in
+                 let occs = (Anf.Register reg)::rest_occs in
                  decision_tree_of_matrix ctx occs matrix >>| fun tree ->
-                 Anf.Deref(first_occ, tree)
+                 Anf.Deref(first_occ, reg, tree)

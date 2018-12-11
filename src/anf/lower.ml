@@ -1,6 +1,6 @@
 (** The compiler must transform statically known curried functions into
-    multi-parameter functions, remap the unique registers to stack and
-    environment offsets, and compile decision trees into switch statements. *)
+    multi-parameter functions, generate constant virtual registers, and compile
+    pattern matches into decision tree. *)
 
 open Base
 
@@ -10,7 +10,7 @@ type t = {
     free_vars : Anf.operand Queue.t; (** Free variables *)
     pat_ctx : Pattern.context;
     parent : t option;
-    reg_gen : int ref;
+    reg_gen : Anf.register ref;
   }
 
 let create parent =
@@ -25,16 +25,6 @@ let fresh_register self =
   let id = !(self.reg_gen) in
   self.reg_gen := id + 1;
   id
-
-let gen_base_occs self =
-  let rec helper i = function
-    | [] -> []
-    | _::xs ->
-       { Anf.id = Pattern.fresh_reg self.pat_ctx
-       ; node = Anf.Index i
-       ; parent = None
-       }::(helper (i + 1) xs)
-  in helper 0
 
 let rec free_var self id =
   (* I would use Hashtbl.find_or_add here, but the callback it takes isn't
@@ -133,15 +123,14 @@ and flatten_app self count args f x ~cont =
     [instr_of_lambdacode]. *)
 and compile_case self scruts matrix ~cont =
   let open Result.Monad_infix in
-  let rec loop list = function
+  let rec loop operands = function
     | scrut::scruts ->
        operand_of_lambdacode self scrut ~cont:(fun operand ->
-           loop (operand::list) scruts
+           loop (operand::operands) scruts
          )
     | [] ->
-       let scruts = List.rev list in
-       Pattern.decision_tree_of_matrix
-         self.pat_ctx (gen_base_occs self scruts) matrix
+       let scruts = List.rev operands in
+       Pattern.decision_tree_of_matrix self.pat_ctx scruts matrix
        >>= fun tree -> cont (scruts, tree)
   in loop [] scruts
 

@@ -20,3 +20,5 @@ type error =
   | Unresolved_path of Ast.qual_id
   | Unresolved_type of Path.t
   | Unresolved_typevar of string
+
+let unreachable str = Error (Sequence.return (Unreachable str))

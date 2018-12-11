@@ -32,26 +32,15 @@ and proc = {
     body : instr;
   }
 
-and occurrence = {
-    id : int;
-    node : occurrence';
-    parent : occurrence option;
-  }
-
-and occurrence' =
-  | Index of int
-  | Contents
-
-and occurrences = occurrence list
-
-and leaf_id = int
-
 and decision_tree =
-  | Deref of occurrence * decision_tree
+  | Deref of operand * register * decision_tree
   | Fail
   | Leaf of jump
     (** A leaf holds a mapping from idents to pattern match occurrences. *)
-  | Switch of occurrence * (int, decision_tree) Hashtbl.t * decision_tree
+  | Switch of
+      operand
+      * (int, register list * decision_tree) Hashtbl.t
+      * decision_tree
     (** A switch holds the scrutinee occurrence and a map from constructors to
         decision trees, and a default decision tree. *)
 
@@ -59,4 +48,4 @@ and decision_tree =
 and join_point = register list * instr
 
 (** A jump is a branch instruction to a join point with the given arguments *)
-and jump = occurrence list * int
+and jump = operand list * int

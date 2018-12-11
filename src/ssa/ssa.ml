@@ -4,7 +4,7 @@ type cont =
   | Block of int (** A basic block other than the entry *)
   | Entry (** The entry basic block *)
   | Return (** Return from the function *)
-  | Switch (** The continuation is dynamic *)
+  | Switch of (int * int) list * int (** The continuation is dynamic *)
 
 type operand = Anf.operand
 
@@ -14,10 +14,12 @@ type opcode =
   | Break of cont
   | Call of operand * operand * operand list
   | Contents of operand
+  | Deref of operand
   | Fun of int * operand list
+  | Get of operand * int
   | Index of operand * int
   | Load of operand
-  | Phi of (int * operand) list
+  | Phi of (int * operand) Queue.t
   | Prim of string
   | Ref of operand
 

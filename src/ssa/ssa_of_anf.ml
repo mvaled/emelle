@@ -1,5 +1,6 @@
 (** This transformation turns ANF join points, which are local to the case expr,
-    into SSA basic blocks, which are local to the function. *)
+    into SSA basic blocks, which are local to the function. Here, the compiler
+    compiles decision trees into switches, jumps, and phi nodes. *)
 
 open Base
 
@@ -37,30 +38,44 @@ let rec compile_opcode ctx anf ~cont =
   | Anf.Case(_scruts, tree, join_points) ->
      (* The basic block for the case expr continuation *)
      fresh_block ctx ~cont:(fun cont_instrs cont_idx ->
-         List.fold_right ~f:(fun (_, instr) acc ->
+         List.fold_right ~f:(fun (reg_args, instr) acc ->
              acc >>= fun list ->
              (* The basic block for the join point *)
              fresh_block ctx ~cont:(fun branch_instrs branch_idx ->
+                 let entry_phi_nodes =
+                   List.fold_right ~f:(fun reg_arg acc ->
+                       let entry_phi_elems = Queue.create () in
+                       Queue.enqueue branch_instrs
+                         { Ssa.dest = Some reg_arg
+                         ; opcode = Phi entry_phi_elems };
+                       entry_phi_elems::acc
+                     ) ~init:[] reg_args
+                 in
                  compile_instr
                    { ctx with
                      instrs = branch_instrs
                    ; curr_cont = Ssa.Block branch_idx
                    ; cont = Ssa.Block cont_idx }
                    instr
-                 >>| fun (tail, phi_elem) ->
-                 ((branch_idx, phi_elem), tail)
+                 >>| fun (tail, exit_phi_elem) ->
+                 ((branch_idx, entry_phi_nodes, exit_phi_elem), tail)
                ) >>| fun branch ->
              branch::list
            ) ~init:(Ok []) join_points
          >>= fun branches ->
-         compile_decision_tree ctx cont_idx (Array.of_list branches) tree
+         compile_decision_tree ctx cont_instrs cont_idx
+           (Array.of_list branches) tree
          >>= fun cont_from_decision_tree ->
+         let phi_elems = Queue.create () in
+         List.iter ~f:(fun (idx, _, exit_phi_elem) ->
+             Queue.enqueue phi_elems (idx, exit_phi_elem)
+           ) branches;
          (* Compile the rest of the ANF in the continuation block *)
          cont
            { ctx with
              instrs = cont_instrs
            ; curr_cont = Ssa.Block cont_idx }
-           (Ssa.Phi branches)
+           (Ssa.Phi phi_elems)
          >>| fun (tail, result) (* Tail of continuation block *) ->
          (* Cont for origin block, cont for continuation block *)
          ((cont_from_decision_tree, result), tail)
@@ -77,16 +92,42 @@ let rec compile_opcode ctx anf ~cont =
   | Anf.Prim p -> cont ctx (Ssa.Prim p)
   | Anf.Ref x -> cont ctx (Ssa.Ref x)
 
-and compile_decision_tree _ctx _cont_idx branches = function
-  | Anf.Deref(_occ, _tree) ->
+and compile_decision_tree ctx _cont_instrs cont_idx branches =
+  let open Result.Monad_infix in
+  function
+  | Anf.Deref(_occ, _dest, _tree) ->
      failwith ""
   | Anf.Fail ->
      failwith ""
-  | Anf.Leaf(_occs, idx) ->
-     let branch_idx, _ = branches.(idx) in
-     Ok (Ssa.Block branch_idx)
-  | Anf.Switch(_occ, _trees, _tree) ->
-     Ok (Ssa.Switch)
+  | Anf.Leaf(operands, idx) ->
+     let rec f operands phis =
+       match operands, phis with
+       | [], [] -> Ok ()
+       | operand::operands, phi::phis ->
+          Queue.enqueue phi (cont_idx, operand);
+          f operands phis
+       | _ -> Message.unreachable "compile_decision_tree"
+     in
+     let branch_idx, entry_phi_nodes, _ = branches.(idx) in
+     f operands entry_phi_nodes >>| fun () ->
+     Ssa.Block branch_idx
+  | Anf.Switch(_occ, trees, else_tree) ->
+     Hashtbl.fold ~f:(fun ~key:case ~data:(_regs, tree) acc ->
+         acc >>= fun list ->
+         fresh_block ctx ~cont:(fun jump_instrs jump_idx ->
+             compile_decision_tree ctx jump_instrs jump_idx branches tree
+             >>| fun cont ->
+             ((case, jump_idx)::list, cont)
+           )
+       ) ~init:(Ok []) trees
+     >>= fun cases ->
+     fresh_block ctx ~cont:(fun else_instrs else_idx ->
+         compile_decision_tree ctx else_instrs else_idx branches else_tree
+         >>| fun cont ->
+         (else_idx, cont)
+       )
+     >>| fun else_block_idx ->
+     Ssa.Switch(cases, else_block_idx)
 
 and compile_instr ctx = function
   | Anf.Let(reg, op, next) ->
