@@ -14,6 +14,15 @@ type t = {
     cont : Ssa.cont;
   }
 
+let create () =
+  { package = ref { Ssa.procs = Map.empty (module Int) }
+  ; blocks = Map.empty (module Int)
+  ; label_gen = ref 0
+  ; proc_gen = ref 0
+  ; instrs = Queue.create ()
+  ; curr_cont = Ssa.Halt
+  ; cont = Ssa.Halt }
+
 (** [fresh_block ctx ~cont] applies [cont] to a fresh [Ssa.instr] queue and the
     index of the next basic block and returns [cont]'s result *)
 let fresh_block ctx ~cont =
@@ -63,7 +72,7 @@ let rec compile_opcode ctx anf ~cont =
              branch::list
            ) ~init:(Ok []) join_points
          >>= fun branches ->
-         compile_decision_tree ctx cont_instrs cont_idx
+         compile_decision_tree ctx ctx.instrs cont_idx
            (Array.of_list branches) tree
          >>= fun cont_from_decision_tree ->
          let phi_elems = Queue.create () in
@@ -92,13 +101,14 @@ let rec compile_opcode ctx anf ~cont =
   | Anf.Prim p -> cont ctx (Ssa.Prim p)
   | Anf.Ref x -> cont ctx (Ssa.Ref x)
 
-and compile_decision_tree ctx _cont_instrs cont_idx branches =
+and compile_decision_tree ctx instrs cont_idx branches =
   let open Result.Monad_infix in
   function
-  | Anf.Deref(_occ, _dest, _tree) ->
-     failwith ""
+  | Anf.Deref(occ, dest, tree) ->
+     Queue.enqueue instrs { Ssa.dest = Some dest; opcode = Deref occ };
+     compile_decision_tree ctx instrs cont_idx branches tree
   | Anf.Fail ->
-     failwith ""
+     Ok Ssa.Fail
   | Anf.Leaf(operands, idx) ->
      let rec f operands phis =
        match operands, phis with
@@ -111,10 +121,14 @@ and compile_decision_tree ctx _cont_instrs cont_idx branches =
      let branch_idx, entry_phi_nodes, _ = branches.(idx) in
      f operands entry_phi_nodes >>| fun () ->
      Ssa.Block branch_idx
-  | Anf.Switch(_occ, trees, else_tree) ->
-     Hashtbl.fold ~f:(fun ~key:case ~data:(_regs, tree) acc ->
+  | Anf.Switch(occ, trees, else_tree) ->
+     Hashtbl.fold ~f:(fun ~key:case ~data:(regs, tree) acc ->
          acc >>= fun list ->
          fresh_block ctx ~cont:(fun jump_instrs jump_idx ->
+             List.iteri ~f:(fun idx reg ->
+                 Queue.enqueue jump_instrs
+                   { Ssa.dest = Some reg; opcode = Get(occ, idx + 1) }
+               ) regs;
              compile_decision_tree ctx jump_instrs jump_idx branches tree
              >>| fun cont ->
              ((case, jump_idx)::list, cont)
@@ -127,7 +141,7 @@ and compile_decision_tree ctx _cont_instrs cont_idx branches =
          (else_idx, cont)
        )
      >>| fun else_block_idx ->
-     Ssa.Switch(cases, else_block_idx)
+     Ssa.Switch(occ, cases, else_block_idx)
 
 and compile_instr ctx = function
   | Anf.Let(reg, op, next) ->

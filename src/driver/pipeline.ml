@@ -31,13 +31,10 @@ let export self env exports =
          Error (Sequence.return (Message.Unresolved_path (Ast.Internal name)))
       | Some reg ->
          match Hashtbl.find self.typechecker.Typecheck.env reg with
-         | None ->
-            Error (Sequence.return (Message.Unreachable "Pipeline export 1"))
+         | None -> Message.unreachable "Pipeline export 1"
          | Some ty ->
             match Hashtbl.find self.lowerer.Lower.ctx reg with
-            | None ->
-               Error
-                 (Sequence.return (Message.Unreachable "Pipeline export 2"))
+            | None -> Message.unreachable "Pipeline export 2"
             | Some operand ->
                match Package.add_val self.package name ty i with
                | Some () -> Ok (i + 1, operand::list)
@@ -128,8 +125,7 @@ let compile_items self env items exports =
                   self.lowerer (Anf.Case(scruts, tree, [params, body]))
               )
          | Let_rec(bindings)::rest ->
-            Lower.compile_letrec self.lowerer bindings
-              ~cont:(fun bindings ->
+            Lower.compile_letrec self.lowerer bindings ~cont:(fun bindings ->
                 loop2 rest >>| fun body ->
                 Anf.Let_rec(bindings, body)
               )
@@ -138,6 +134,10 @@ let compile_items self env items exports =
   in loop env [] items
 
 let compile packages name ast_package =
+  let open Result.Monad_infix in
   let st = create name packages in
   compile_items
     st (Env.empty (module String)) ast_package.Ast.items ast_package.Ast.exports
+  >>= fun anf ->
+  let to_ssa = Ssa_of_anf.create () in
+  Ssa_of_anf.compile_instr to_ssa anf

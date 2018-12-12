@@ -1,12 +1,17 @@
 open Base
 
-type cont =
-  | Block of int (** A basic block other than the entry *)
-  | Entry (** The entry basic block *)
-  | Return (** Return from the function *)
-  | Switch of (int * int) list * int (** The continuation is dynamic *)
+type label = int
 
 type operand = Anf.operand
+
+type cont =
+  | Block of label (** A basic block other than the entry *)
+  | Entry (** The entry basic block *)
+  | Fail (** Pattern match failure *)
+  | Halt
+  | Return (** Return from the function *)
+  | Switch of operand * (int * label) list * int
+      (** The continuation is dynamic *)
 
 type opcode =
   | Assign of operand * operand
@@ -19,7 +24,7 @@ type opcode =
   | Get of operand * int
   | Index of operand * int
   | Load of operand
-  | Phi of (int * operand) Queue.t
+  | Phi of (label * operand) Queue.t
   | Prim of string
   | Ref of operand
 
@@ -35,7 +40,7 @@ type basic_block = {
 
 type proc = {
     entry : basic_block;
-    blocks : (int, basic_block, Int.comparator_witness) Map.t;
+    blocks : (label, basic_block, Int.comparator_witness) Map.t;
     return : Anf.operand;
   }
 
