@@ -121,7 +121,8 @@ and compile_decision_tree ctx instrs cont_idx branches =
      let branch_idx, entry_phi_nodes, _ = branches.(idx) in
      f operands entry_phi_nodes >>| fun () ->
      Ssa.Block branch_idx
-  | Anf.Switch(occ, trees, else_tree) ->
+  | Anf.Switch(tag_reg, occ, trees, else_tree) ->
+     Queue.enqueue instrs { Ssa.dest = Some tag_reg; opcode = Get(occ, 0) };
      Hashtbl.fold ~f:(fun ~key:case ~data:(regs, tree) acc ->
          acc >>= fun list ->
          fresh_block ctx ~cont:(fun jump_instrs jump_idx ->
@@ -141,7 +142,7 @@ and compile_decision_tree ctx instrs cont_idx branches =
          (else_idx, cont)
        )
      >>| fun else_block_idx ->
-     Ssa.Switch(occ, cases, else_block_idx)
+     Ssa.Switch(Anf.Register tag_reg, cases, else_block_idx)
 
 and compile_instr ctx = function
   | Anf.Let(reg, op, next) ->

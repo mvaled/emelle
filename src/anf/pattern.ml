@@ -18,7 +18,7 @@ type row = {
     action : int
   }
 
-(** Contract: All rows in the matrix have the same length *)
+(** Invariant: All rows in the matrix have the same length *)
 type matrix = row list
 
 type context = {
@@ -151,8 +151,7 @@ let rec default_matrix rows =
        match first_pat.node with
        | Con _ -> Some rows
        | Deref _ -> None
-       | Wild ->
-          Some ({ row with patterns = rest_pats }::rows)
+       | Wild -> Some ({ row with patterns = rest_pats }::rows)
        | Or(p1, p2) ->
           default_matrix [{ row with patterns = p1::rest_pats }]
           >>= fun mat1 ->
@@ -218,6 +217,7 @@ let rec decision_tree_of_matrix ctx (occurrences : Anf.operand list) =
                    ("Pattern idx out of bounds: " ^ (Int.to_string i))
               | Some (first_occ, rest_occs) ->
                  let jump_tbl = Hashtbl.create (module Int) in
+                 let tag_reg = fresh_reg ctx in
                  Array.foldi ~f:(fun id acc (_, product, _) ->
                      acc >>= fun () ->
                      (* Just like how the matched value is popped off the stack
@@ -248,7 +248,7 @@ let rec decision_tree_of_matrix ctx (occurrences : Anf.operand list) =
                    ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
                  decision_tree_of_matrix ctx rest_occs default
                  >>| fun default_tree ->
-                 Anf.Switch(first_occ, jump_tbl, default_tree)
+                 Anf.Switch(tag_reg, first_occ, jump_tbl, default_tree)
         end
      | Found_ref i ->
         match swap_occurrences i occurrences with

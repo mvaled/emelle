@@ -38,8 +38,7 @@ and decision_tree =
   | Leaf of jump
     (** A leaf holds a mapping from idents to pattern match occurrences. *)
   | Switch of
-      operand
-      * (int, register list * decision_tree) Hashtbl.t
+      register * operand * (int, register list * decision_tree) Hashtbl.t
       * decision_tree
     (** A switch holds the scrutinee occurrence and a map from constructors to
         decision trees, and a default decision tree. *)
