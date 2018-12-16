@@ -8,7 +8,6 @@ type cont =
   | Block of label (** A basic block other than the entry *)
   | Entry (** The entry basic block *)
   | Fail (** Pattern match failure *)
-  | Halt
   | Return (** Return from the function *)
   | Switch of operand * (int * label) list * label
       (** The continuation is dynamic *)

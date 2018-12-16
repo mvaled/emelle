@@ -216,10 +216,9 @@ let rec decision_tree_of_matrix ctx (occurrences : Anf.operand list) =
                  Message.unreachable
                    ("Pattern idx out of bounds: " ^ (Int.to_string i))
               | Some (first_occ, rest_occs) ->
-                 let jump_tbl = Hashtbl.create (module Int) in
                  let tag_reg = fresh_reg ctx in
                  Array.foldi ~f:(fun id acc (_, product, _) ->
-                     acc >>= fun () ->
+                     acc >>= fun jump_tbl ->
                      (* Just like how the matched value is popped off the stack
                         and its children pushed on the stack, pop off the
                         selected occurrence and push occurrences for its
@@ -240,12 +239,15 @@ let rec decision_tree_of_matrix ctx (occurrences : Anf.operand list) =
                         match
                           decision_tree_of_matrix ctx pushed_occs matrix
                         with
-                        | Ok tree ->
-                           Hashtbl.add_exn
-                             ~key:id ~data:(new_regs, tree) jump_tbl;
-                           Ok ()
                         | Error e -> Error e
-                   ) alg.Type.constrs ~init:(Ok ()) >>= fun () ->
+                        | Ok tree ->
+                           match
+                             Map.add jump_tbl ~key:id ~data:(new_regs, tree)
+                           with
+                           | `Ok jump_tbl -> Ok jump_tbl
+                           | `Duplicate -> Message.unreachable "dec tree dup"
+                   ) alg.Type.constrs ~init:(Ok (Map.empty (module Int)))
+                 >>= fun jump_tbl ->
                  decision_tree_of_matrix ctx rest_occs default
                  >>| fun default_tree ->
                  Anf.Switch(tag_reg, first_occ, jump_tbl, default_tree)

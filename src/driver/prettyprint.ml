@@ -141,8 +141,6 @@ let print_cont pp = function
      Buffer.add_string pp.buffer "entry";
   | Ssa.Fail ->
      Buffer.add_string pp.buffer "panic";
-  | Ssa.Halt ->
-     Buffer.add_string pp.buffer "halt";
   | Ssa.Return ->
      Buffer.add_string pp.buffer "ret";
   | Ssa.Switch(scrut, cases, else_label) ->

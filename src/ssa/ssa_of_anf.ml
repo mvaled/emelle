@@ -114,7 +114,7 @@ and compile_decision_tree ctx instrs cont_idx branches =
      Ssa.Block branch_idx
   | Anf.Switch(tag_reg, occ, trees, else_tree) ->
      Queue.enqueue instrs { Ssa.dest = Some tag_reg; opcode = Get(occ, 0) };
-     Hashtbl.fold ~f:(fun ~key:case ~data:(regs, tree) acc ->
+     Map.fold ~f:(fun ~key:case ~data:(regs, tree) acc ->
          acc >>= fun list ->
          fresh_block ctx ~cont:(fun jump_instrs jump_idx ->
              List.iteri ~f:(fun idx reg ->
