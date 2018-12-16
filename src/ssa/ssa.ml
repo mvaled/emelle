@@ -45,4 +45,5 @@ type proc = {
 
 type package = {
     procs : (int, proc, Int.comparator_witness) Map.t;
+    main : proc
   }

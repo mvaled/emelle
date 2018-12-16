@@ -5,7 +5,7 @@
 open Base
 
 type t = {
-    package : Ssa.package ref;
+    procs : (int, Ssa.proc, Int.comparator_witness) Map.t ref;
     blocks : (int, Ssa.basic_block, Int.comparator_witness) Map.t ref;
     label_gen : int ref;
     proc_gen : int ref;
@@ -13,15 +13,6 @@ type t = {
     curr_cont : Ssa.cont;
     cont : Ssa.cont;
   }
-
-let create () =
-  { package = ref { Ssa.procs = Map.empty (module Int) }
-  ; blocks = ref (Map.empty (module Int))
-  ; label_gen = ref 0
-  ; proc_gen = ref 0
-  ; instrs = Queue.create ()
-  ; curr_cont = Ssa.Halt
-  ; cont = Ssa.Halt }
 
 (** [fresh_block ctx ~cont] applies [cont] to a fresh [Ssa.instr] queue and the
     index of the next basic block and returns [cont]'s result *)
@@ -94,8 +85,8 @@ let rec compile_opcode ctx anf ~cont =
      compile_proc ctx proc >>= fun proc ->
      let idx = !(ctx.proc_gen) in
      ctx.proc_gen := idx + 1;
-     let procs = Map.set !(ctx.package).Ssa.procs ~key:idx ~data:proc in
-     ctx.package := { procs };
+     let procs = Map.set !(ctx.procs) ~key:idx ~data:proc in
+     ctx.procs := procs;
      cont ctx (Ssa.Fun(idx, env))
   | Anf.Load o -> cont ctx (Ssa.Load o)
   | Anf.Prim p -> cont ctx (Ssa.Prim p)
@@ -184,4 +175,25 @@ and compile_proc ctx proc =
   { Ssa.params = proc.Anf.params
   ; blocks = !blocks
   ; entry = { instrs; tail }
-  ; return = return }
+  ; return }
+
+let compile_module anf =
+  let open Result.Monad_infix in
+  let ctx =
+    { procs = ref (Map.empty (module Int))
+    ; blocks = ref (Map.empty (module Int))
+    ; instrs = Queue.create ()
+    ; proc_gen = ref 0
+    ; label_gen = ref 0
+    ; curr_cont = Ssa.Entry
+    ; cont = Ssa.Return }
+  in
+  compile_instr ctx anf >>| fun (tail, return) ->
+  let main_proc =
+    { Ssa.params = []
+    ; blocks = !(ctx.blocks)
+    ; entry = { instrs = ctx.instrs; tail }
+    ; return }
+  in
+  { Ssa.procs = !(ctx.procs)
+  ; main = main_proc }

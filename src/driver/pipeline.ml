@@ -138,7 +138,4 @@ let compile packages name ast_package =
   let st = create name packages in
   compile_items
     st (Env.empty (module String)) ast_package.Ast.items ast_package.Ast.exports
-  >>= fun anf ->
-  let to_ssa = Ssa_of_anf.create () in
-  Ssa_of_anf.compile_instr to_ssa anf >>| fun anf ->
-  (to_ssa, anf)
+  >>= Ssa_of_anf.compile_module

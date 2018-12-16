@@ -1,16 +1,28 @@
 open Base
 
 type t =
-  { buffer : Buffer.t }
+  { buffer : Buffer.t
+  ; indentation : int }
 
-let create () = { buffer = Buffer.create 12 }
+let create () =
+  { buffer = Buffer.create 12
+  ; indentation = 0 }
 
 let to_string pp = Buffer.contents pp.buffer
 
+let indent pp f =
+  f { pp with indentation = pp.indentation + 1 }
+
+let newline pp =
+  Buffer.add_char pp.buffer '\n';
+  for _ = 1 to pp.indentation do
+    Buffer.add_string pp.buffer "  "
+  done
+
 let print_ident pp (package, name) =
-     Buffer.add_string pp.buffer package;
-     Buffer.add_string pp.buffer ".";
-     Buffer.add_string pp.buffer name
+  Buffer.add_string pp.buffer package;
+  Buffer.add_string pp.buffer ".";
+  Buffer.add_string pp.buffer name
 
 let print_path pp = function
   | Ast.Internal str ->
@@ -212,10 +224,8 @@ let print_opcode pp = function
 
 let print_instr pp Ssa.{ dest; opcode } =
   begin match dest with
-  | Some reg ->
-     print_reg pp reg
-  | None ->
-     Buffer.add_char pp.buffer '_'
+  | Some reg -> print_reg pp reg
+  | None -> Buffer.add_char pp.buffer '_'
   end;
   Buffer.add_string pp.buffer " = ";
   print_opcode pp opcode
@@ -223,7 +233,7 @@ let print_instr pp Ssa.{ dest; opcode } =
 let print_bb pp Ssa.{ instrs; tail } =
   Queue.iter ~f:(fun instr ->
       print_instr pp instr;
-      Buffer.add_char pp.buffer '\n'
+      newline pp
     ) instrs;
   Buffer.add_string pp.buffer "break ";
   print_cont pp tail
@@ -234,20 +244,34 @@ let print_proc pp Ssa.{ params; entry; blocks; return } =
       print_reg pp param;
       Buffer.add_string pp.buffer "; "
     ) params;
-  Buffer.add_string pp.buffer ")\n";
-  Buffer.add_string pp.buffer "entry:\n";
-  print_bb pp entry;
-  Map.iteri ~f:(fun ~key ~data ->
-      print_label pp key;
-      Buffer.add_string pp.buffer ":\n";
-      print_bb pp data
-    ) blocks;
-  Buffer.add_string pp.buffer "\nretval: ";
-  print_operand pp return
+  Buffer.add_char pp.buffer ')';
+  indent pp (fun pp ->
+      newline pp;
+      Buffer.add_string pp.buffer "entry:";
+      indent pp (fun pp ->
+          newline pp;
+          print_bb pp entry
+        );
+      newline pp;
+      Map.iteri ~f:(fun ~key ~data ->
+          print_label pp key;
+          Buffer.add_char pp.buffer ':';
+          indent pp (fun pp ->
+              newline pp;
+              print_bb pp data
+            );
+          newline pp
+        ) blocks;
+      Buffer.add_string pp.buffer "retval: ";
+      print_operand pp return
+    )
 
-let print_module pp Ssa.{ procs } =
+let print_module pp Ssa.{ procs; main } =
   Map.iteri ~f:(fun ~key ~data ->
       print_procname pp key;
       print_proc pp data;
-      Buffer.add_char pp.buffer '\n'
-    ) procs
+      newline pp;
+      newline pp
+    ) procs;
+  Buffer.add_string pp.buffer "main";
+  print_proc pp main

@@ -26,13 +26,9 @@ let () =
                 Parser.file Lexer.expr (Lexing.from_string bytestr)
                 |> Pipeline.compile (Hashtbl.create (module String)) "main"
               with
-              | Ok(to_ssa, _) ->
+              | Ok modul ->
                  Caml.print_endline "OK!";
-                 Prettyprint.print_module pp (!(to_ssa.Ssa_of_anf.package));
-                 Queue.iter ~f:(fun instr ->
-                     Prettyprint.print_instr pp instr;
-                     Buffer.add_char pp.Prettyprint.buffer '\n'
-                   ) to_ssa.Ssa_of_anf.instrs;
+                 Prettyprint.print_module pp modul;
                  set_console_text (Prettyprint.to_string pp)
               | Error errs ->
                  Caml.print_endline "ERROR!";
