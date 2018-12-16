@@ -63,7 +63,7 @@ let rec proc_of_lambda self params id body ~cont =
      | _ ->
         instr_of_lambdacode self body ~cont:(fun opcode ->
             cont (Anf.Fun ({ env = Queue.to_list self.free_vars
-                           ; params = List.rev params
+                           ; params = List.rev (reg::params)
                            ; body = make_break self opcode }))
           )
 

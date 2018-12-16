@@ -6,7 +6,7 @@ open Base
 
 type t = {
     package : Ssa.package ref;
-    mutable blocks : (int, Ssa.basic_block, Int.comparator_witness) Map.t;
+    blocks : (int, Ssa.basic_block, Int.comparator_witness) Map.t ref;
     label_gen : int ref;
     proc_gen : int ref;
     instrs : Ssa.instr Queue.t;
@@ -16,7 +16,7 @@ type t = {
 
 let create () =
   { package = ref { Ssa.procs = Map.empty (module Int) }
-  ; blocks = Map.empty (module Int)
+  ; blocks = ref (Map.empty (module Int))
   ; label_gen = ref 0
   ; proc_gen = ref 0
   ; instrs = Queue.create ()
@@ -32,7 +32,7 @@ let fresh_block ctx ~cont =
   let instrs = Queue.create () in
   cont instrs idx >>| fun (ret, tail) ->
   let block = { Ssa.instrs; tail } in
-  ctx.blocks <- Map.set ctx.blocks ~key:idx ~data:block;
+  ctx.blocks := Map.set !(ctx.blocks) ~key:idx ~data:block;
   ret
 
 let rec compile_opcode ctx anf ~cont =
@@ -170,7 +170,7 @@ and compile_instr ctx = function
 
 and compile_proc ctx proc =
   let open Result.Monad_infix in
-  let blocks = Map.empty (module Int) in
+  let blocks = ref (Map.empty (module Int)) in
   let instrs = Queue.create () in
   let state =
     { ctx with
@@ -181,6 +181,7 @@ and compile_proc ctx proc =
     ; cont = Ssa.Return }
   in
   compile_instr state proc.Anf.body >>| fun (tail, return) ->
-  { Ssa.blocks
+  { Ssa.params = proc.Anf.params
+  ; blocks = !blocks
   ; entry = { instrs; tail }
   ; return = return }

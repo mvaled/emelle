@@ -10,7 +10,7 @@ type cont =
   | Fail (** Pattern match failure *)
   | Halt
   | Return (** Return from the function *)
-  | Switch of operand * (int * label) list * int
+  | Switch of operand * (int * label) list * label
       (** The continuation is dynamic *)
 
 type opcode =
@@ -18,11 +18,9 @@ type opcode =
   | Box of operand list
   | Break of cont
   | Call of operand * operand * operand list
-  | Contents of operand
   | Deref of operand
   | Fun of int * operand list
   | Get of operand * int
-  | Index of operand * int
   | Load of operand
   | Phi of (label * operand) Queue.t
   | Prim of string
@@ -39,6 +37,7 @@ type basic_block = {
   }
 
 type proc = {
+    params : Anf.register list;
     entry : basic_block;
     blocks : (label, basic_block, Int.comparator_witness) Map.t;
     return : Anf.operand;

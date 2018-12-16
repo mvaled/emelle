@@ -19,18 +19,23 @@ let () =
         in
         button##.onclick :=
           Dom.handler (fun _ ->
+              let pp = Prettyprint.create () in
               begin match
                 let program = textarea##.value in
                 let bytestr = Js.to_bytestring program in
                 Parser.file Lexer.expr (Lexing.from_string bytestr)
                 |> Pipeline.compile (Hashtbl.create (module String)) "main"
               with
-              | Ok _ ->
+              | Ok(to_ssa, _) ->
                  Caml.print_endline "OK!";
-                 set_console_text ""
+                 Prettyprint.print_module pp (!(to_ssa.Ssa_of_anf.package));
+                 Queue.iter ~f:(fun instr ->
+                     Prettyprint.print_instr pp instr;
+                     Buffer.add_char pp.Prettyprint.buffer '\n'
+                   ) to_ssa.Ssa_of_anf.instrs;
+                 set_console_text (Prettyprint.to_string pp)
               | Error errs ->
                  Caml.print_endline "ERROR!";
-                 let pp = Prettyprint.create () in
                  Sequence.iter ~f:(Prettyprint.print_error pp) errs;
                  set_console_text (Prettyprint.to_string pp)
               | exception (Parser.Error | Lexer.Error _) ->

@@ -87,3 +87,167 @@ let print_error pp e =
      Buffer.add_string pp.buffer "other"
   end;
   Buffer.add_char pp.buffer '\n'
+
+let print_lit pp = function
+  | Literal.Char ch ->
+     Buffer.add_string pp.buffer (Char.escaped ch)
+  | Literal.Float fl ->
+     Buffer.add_string pp.buffer (Float.to_string fl)
+  | Literal.Int i ->
+     Buffer.add_string pp.buffer (Int.to_string i)
+  | Literal.String str ->
+     Buffer.add_string pp.buffer (String.escaped str)
+
+let print_qual_id pp (package, name) =
+  Buffer.add_string pp.buffer package;
+  Buffer.add_char pp.buffer '.';
+  Buffer.add_string pp.buffer name
+
+let print_reg pp reg =
+  Buffer.add_string pp.buffer "r%";
+  Buffer.add_string pp.buffer (Int.to_string reg)
+
+let print_operand pp = function
+  | Anf.Extern_var path ->
+     print_qual_id pp path
+  | Anf.Free_var idx ->
+     Buffer.add_string pp.buffer "e%";
+     Buffer.add_string pp.buffer (Int.to_string idx)
+  | Anf.Lit lit ->
+     print_lit pp lit
+  | Anf.Register id ->
+     print_reg pp id
+
+let print_label pp label =
+  Buffer.add_char pp.buffer 'L';
+  Buffer.add_string pp.buffer (Int.to_string label)
+
+let print_cont pp = function
+  | Ssa.Block label ->
+     print_label pp label
+  | Ssa.Entry ->
+     Buffer.add_string pp.buffer "entry";
+  | Ssa.Fail ->
+     Buffer.add_string pp.buffer "panic";
+  | Ssa.Halt ->
+     Buffer.add_string pp.buffer "halt";
+  | Ssa.Return ->
+     Buffer.add_string pp.buffer "ret";
+  | Ssa.Switch(scrut, cases, else_label) ->
+     Buffer.add_string pp.buffer "switch ";
+     print_operand pp scrut;
+     Buffer.add_string pp.buffer " [";
+     List.iter ~f:(fun (case, conseq) ->
+         Buffer.add_string pp.buffer (Int.to_string case);
+         Buffer.add_string pp.buffer " -> ";
+         print_label pp conseq;
+         Buffer.add_string pp.buffer "; "
+       ) cases;
+     Buffer.add_string pp.buffer "] ";
+     print_label pp else_label
+
+let print_procname pp name =
+  Buffer.add_char pp.buffer 'F';
+  Buffer.add_string pp.buffer (Int.to_string name)
+
+let print_opcode pp = function
+  | Ssa.Assign(lval, rval) ->
+     Buffer.add_string pp.buffer "assn ";
+     print_operand pp lval;
+     Buffer.add_char pp.buffer ' ';
+     print_operand pp rval
+  | Ssa.Box items  ->
+     Buffer.add_string pp.buffer "box [";
+     List.iter ~f:(print_operand pp) items;
+     Buffer.add_char pp.buffer ']'
+  | Ssa.Break cont ->
+     Buffer.add_string pp.buffer "br ";
+     print_cont pp cont
+  | Ssa.Call(f, arg, args) ->
+     Buffer.add_string pp.buffer "call ";
+     print_operand pp f;
+     Buffer.add_char pp.buffer ' ';
+     print_operand pp arg;
+     Buffer.add_string pp.buffer " [";
+     List.iter ~f:(fun operand ->
+         print_operand pp operand;
+         Buffer.add_string pp.buffer "; "
+       ) args;
+     Buffer.add_string pp.buffer "]"
+  | Ssa.Deref op ->
+     Buffer.add_string pp.buffer "deref ";
+     print_operand pp op
+  | Ssa.Fun(f, captures) ->
+     Buffer.add_string pp.buffer "closure ";
+     print_procname pp f;
+     Buffer.add_string pp.buffer " [";
+     List.iter ~f:(fun capture ->
+         print_operand pp capture;
+         Buffer.add_string pp.buffer "; ";
+       ) captures;
+     Buffer.add_char pp.buffer ']'
+  | Ssa.Get(op, idx) ->
+     Buffer.add_string pp.buffer "get ";
+     print_operand pp op;
+     Buffer.add_char pp.buffer ' ';
+     Buffer.add_string pp.buffer (Int.to_string idx)
+  | Ssa.Load op ->
+     Buffer.add_string pp.buffer "load ";
+     print_operand pp op
+  | Ssa.Phi queue ->
+     Buffer.add_string pp.buffer "phi [";
+     Queue.iter ~f:(fun (label, operand) ->
+         print_label pp label;
+         Buffer.add_char pp.buffer ' ';
+         print_operand pp operand;
+         Buffer.add_char pp.buffer ';'
+       ) queue;
+     Buffer.add_char pp.buffer ']'
+  | Ssa.Prim str ->
+     Buffer.add_string pp.buffer "prim ";
+     Buffer.add_string pp.buffer (String.escaped str)
+  | Ssa.Ref op ->
+     Buffer.add_string pp.buffer "ref ";
+     print_operand pp op
+
+let print_instr pp Ssa.{ dest; opcode } =
+  begin match dest with
+  | Some reg ->
+     print_reg pp reg
+  | None ->
+     Buffer.add_char pp.buffer '_'
+  end;
+  Buffer.add_string pp.buffer " = ";
+  print_opcode pp opcode
+
+let print_bb pp Ssa.{ instrs; tail } =
+  Queue.iter ~f:(fun instr ->
+      print_instr pp instr;
+      Buffer.add_char pp.buffer '\n'
+    ) instrs;
+  Buffer.add_string pp.buffer "break ";
+  print_cont pp tail
+
+let print_proc pp Ssa.{ params; entry; blocks; return } =
+  Buffer.add_char pp.buffer '(';
+  List.iter ~f:(fun param ->
+      print_reg pp param;
+      Buffer.add_string pp.buffer "; "
+    ) params;
+  Buffer.add_string pp.buffer ")\n";
+  Buffer.add_string pp.buffer "entry:\n";
+  print_bb pp entry;
+  Map.iteri ~f:(fun ~key ~data ->
+      print_label pp key;
+      Buffer.add_string pp.buffer ":\n";
+      print_bb pp data
+    ) blocks;
+  Buffer.add_string pp.buffer "\nretval: ";
+  print_operand pp return
+
+let print_module pp Ssa.{ procs } =
+  Map.iteri ~f:(fun ~key ~data ->
+      print_procname pp key;
+      print_proc pp data;
+      Buffer.add_char pp.buffer '\n'
+    ) procs
