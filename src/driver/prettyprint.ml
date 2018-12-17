@@ -204,14 +204,14 @@ let print_opcode pp = function
   | Ssa.Load op ->
      Buffer.add_string pp.buffer "load ";
      print_operand pp op
-  | Ssa.Phi queue ->
+  | Ssa.Phi map ->
      Buffer.add_string pp.buffer "phi [";
-     Queue.iter ~f:(fun (label, operand) ->
+     Map.iteri ~f:(fun ~key:label ~data:operand ->
          print_label pp label;
          Buffer.add_char pp.buffer ' ';
          print_operand pp operand;
          Buffer.add_char pp.buffer ';'
-       ) queue;
+       ) !map;
      Buffer.add_char pp.buffer ']'
   | Ssa.Prim str ->
      Buffer.add_string pp.buffer "prim ";

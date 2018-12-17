@@ -37,7 +37,7 @@ pages:
   script:
   - dune build @doc
   - mkdir public
-  - mv _build/main/_doc/_html public/docs
+  - mv _build/main/_doc/_html public/doc
   - mv _build/main/try public/try
   artifacts:
     paths:

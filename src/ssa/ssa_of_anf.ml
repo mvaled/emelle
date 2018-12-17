@@ -44,7 +44,7 @@ let rec compile_opcode ctx anf ~cont =
              fresh_block ctx ~cont:(fun branch_instrs branch_idx ->
                  let entry_phi_nodes =
                    List.fold_right ~f:(fun reg_arg acc ->
-                       let entry_phi_elems = Queue.create () in
+                       let entry_phi_elems = ref (Map.empty (module Int)) in
                        Queue.enqueue branch_instrs
                          { Ssa.dest = Some reg_arg
                          ; opcode = Phi entry_phi_elems };
@@ -66,9 +66,9 @@ let rec compile_opcode ctx anf ~cont =
          compile_decision_tree ctx ctx.instrs cont_idx
            (Array.of_list branches) tree
          >>= fun cont_from_decision_tree ->
-         let phi_elems = Queue.create () in
+         let phi_elems = ref (Map.empty (module Int)) in
          List.iter ~f:(fun (idx, _, exit_phi_elem) ->
-             Queue.enqueue phi_elems (idx, exit_phi_elem)
+             phi_elems := Map.set !phi_elems ~key:idx ~data:exit_phi_elem
            ) branches;
          (* Compile the rest of the ANF in the continuation block *)
          cont
@@ -105,7 +105,7 @@ and compile_decision_tree ctx instrs cont_idx branches =
        match operands, phis with
        | [], [] -> Ok ()
        | operand::operands, phi::phis ->
-          Queue.enqueue phi (cont_idx, operand);
+          phi := Map.set !phi ~key:cont_idx ~data:operand;
           f operands phis
        | _ -> Message.unreachable "compile_decision_tree"
      in

@@ -21,7 +21,7 @@ type opcode =
   | Fun of int * operand list
   | Get of operand * int
   | Load of operand
-  | Phi of (label * operand) Queue.t
+  | Phi of (label, operand, Int.comparator_witness) Map.t ref
   | Prim of string
   | Ref of operand
 
