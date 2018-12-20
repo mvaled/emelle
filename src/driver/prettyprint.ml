@@ -95,6 +95,8 @@ let print_error pp e =
   | Message.Unresolved_path path ->
      Buffer.add_string pp.buffer "Unresolved path ";
      print_path pp path
+  | Message.Unsafe_let_rec ->
+     Buffer.add_string pp.buffer "Unsafe let rec"
   | _ ->
      Buffer.add_string pp.buffer "other"
   end;
@@ -166,10 +168,13 @@ let print_opcode pp = function
      print_operand pp lval;
      Buffer.add_char pp.buffer ' ';
      print_operand pp rval
-  | Ssa.Box items  ->
+  | Ssa.Box items ->
      Buffer.add_string pp.buffer "box [";
      List.iter ~f:(print_operand pp) items;
      Buffer.add_char pp.buffer ']'
+  | Ssa.Box_dummy size ->
+     Buffer.add_string pp.buffer "dummy ";
+     Buffer.add_string pp.buffer (Int.to_string size)
   | Ssa.Break cont ->
      Buffer.add_string pp.buffer "br ";
      print_cont pp cont
@@ -204,6 +209,11 @@ let print_opcode pp = function
   | Ssa.Load op ->
      Buffer.add_string pp.buffer "load ";
      print_operand pp op
+  | Ssa.Memcopy(dest, src) ->
+     Buffer.add_string pp.buffer "memcopy ";
+     print_operand pp dest;
+     Buffer.add_char pp.buffer ' ';
+     print_operand pp src
   | Ssa.Phi map ->
      Buffer.add_string pp.buffer "phi [";
      Map.iteri ~f:(fun ~key:label ~data:operand ->

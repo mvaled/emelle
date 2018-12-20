@@ -23,7 +23,7 @@ and opcode =
 and instr =
   | Break of operand
   | Let of register * opcode * instr
-  | Let_rec of (register * opcode) list * instr
+  | Let_rec of (register * register * opcode) list * instr
   | Seq of opcode * instr
 
 and proc = {

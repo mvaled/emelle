@@ -187,9 +187,7 @@ and instr_of_lambdacode self lambda ~cont =
      instr_of_lambdacode self rhs ~cont:(fun rhs ->
          let var = fresh_register self in
          match Hashtbl.add self.ctx ~key:lhs ~data:(Register var) with
-         | `Duplicate ->
-            Error (Sequence.return
-                     (Message.Unreachable "Bytecode instr_of_lambdacode"))
+         | `Duplicate -> Message.unreachable "Lower instr_of_lambdacode"
          | `Ok ->
             instr_of_lambdacode self body ~cont >>| fun body ->
             Anf.Let(var, rhs, body)
@@ -218,15 +216,16 @@ and compile_letrec self bindings ~cont =
   List.fold ~f:(fun acc (lhs, rhs) ->
       acc >>= fun list ->
       let var = fresh_register self in
+      let temp_var = fresh_register self in
       match Hashtbl.add self.ctx ~key:lhs ~data:(Anf.Register var) with
       | `Duplicate ->
          Error (Sequence.return (Message.Unreachable "Bytecode comp letrec"))
-      | `Ok -> Ok ((var, rhs)::list)
+      | `Ok -> Ok ((var, temp_var, rhs)::list)
     ) ~init:(Ok []) bindings >>= fun list ->
   let rec f bindings = function
-    | (lhs, rhs)::rest ->
+    | (var, temp_var, rhs)::rest ->
        instr_of_lambdacode self rhs ~cont:(fun opcode ->
-           f ((lhs, opcode)::bindings) rest
+           f ((var, temp_var, opcode)::bindings) rest
          )
     | [] -> cont bindings
   in f [] list

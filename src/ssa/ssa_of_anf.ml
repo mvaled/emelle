@@ -135,17 +135,36 @@ and compile_decision_tree ctx instrs cont_idx branches =
      >>| fun else_block_idx ->
      Ssa.Switch(Anf.Register tag_reg, cases, else_block_idx)
 
-and compile_instr ctx = function
+and compile_instr ctx =
+  let open Result.Monad_infix in
+  function
   | Anf.Let(reg, op, next) ->
      compile_opcode ctx op ~cont:(fun ctx op ->
          Queue.enqueue ctx.instrs { Ssa.dest = Some reg; opcode = op };
          compile_instr ctx next
        )
   | Anf.Let_rec(bindings, next) ->
+     (* Initialize registers with dummy allocations *)
+     List.fold_left ~f:(fun acc (reg, _, def) ->
+         acc >>= fun () ->
+         begin match def with
+         | Anf.Box list -> Ok (List.length list)
+         | Anf.Fun proc -> Ok (List.length proc.Anf.env + 1)
+         | _ -> Error (Sequence.return Message.Unsafe_let_rec)
+         end >>| fun size ->
+         Queue.enqueue ctx.instrs
+           { Ssa.dest = Some reg; opcode = Ssa.Box_dummy size }
+       ) ~init:(Ok ()) bindings
+     >>= fun () ->
      (* Accumulator is a function *)
-     List.fold_right ~f:(fun (reg, op) acc ctx ->
+     List.fold_right ~f:(fun (reg, temp, op) acc ctx ->
          compile_opcode ctx op ~cont:(fun ctx op ->
-             Queue.enqueue ctx.instrs { Ssa.dest = Some reg; opcode = op };
+             (* Evaluate the let-rec binding RHS *)
+             Queue.enqueue ctx.instrs { Ssa.dest = Some temp; opcode = op };
+             (* Mutate the memory that the register points to *)
+             Queue.enqueue ctx.instrs
+               { Ssa.dest = None
+               ; opcode = Ssa.Memcopy(Anf.Register reg, Anf.Register temp) };
              acc ctx
            )
        ) ~init:(fun ctx ->

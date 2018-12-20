@@ -83,14 +83,10 @@ let test (input, phase) =
   let env = Env.empty (module String) in
   let packages = Hashtbl.create (module String) in
   let elaborator = Elab.create package packages in
-  let next =
-    test_phase (Elab.term_of_expr elaborator env) Elab input next phase
-  in
-  next >>= fun next ->
+  test_phase (Elab.term_of_expr elaborator env) Elab input next phase
+  >>= fun next ->
   let typechecker = Typecheck.create package packages in
-  let next =
-    test_phase (Typecheck.infer_term typechecker) Typecheck input next phase
-  in next
+  test_phase (Typecheck.infer_term typechecker) Typecheck input next phase
 
 let _ = List.map ~f:test tests
 
@@ -107,7 +103,6 @@ let tests =
   ; "() type Foo = Foo type Bar = Bar Foo"
   ; "() type Bar = Bar Foo and Foo = Foo"
   ; "() type List a = Nil | Cons a (List a)"
-  ; "(id, id2, id3) let rec id = fun x -> x and id2 = id let id3 = id2 id id2"
   ; "(id, id2) let id = fun x -> x let id2 = id id"
   ; "() type Unit = Unit let unit = Unit"
   ; "() type Option a = None | Some a let return = Some"
@@ -280,7 +275,8 @@ let () =
     ) tests
 
 let tests =
-  [ {|()
+  [ "(id, id2, id3) let rec id = fun x -> x and id2 = id let id3 = id2 id id2"
+  ; {|()
       type Option a = None | Some a
 
       let r = Ref None

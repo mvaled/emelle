@@ -15,12 +15,14 @@ type cont =
 type opcode =
   | Assign of operand * operand
   | Box of operand list
+  | Box_dummy of int
   | Break of cont
   | Call of operand * operand * operand list
   | Deref of operand
   | Fun of int * operand list
   | Get of operand * int
   | Load of operand
+  | Memcopy of operand * operand
   | Phi of (label, operand, Int.comparator_witness) Map.t ref
   | Prim of string
   | Ref of operand
