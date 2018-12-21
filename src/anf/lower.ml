@@ -36,12 +36,10 @@ let rec free_var self id =
       match self.parent with
       | Some parent ->
          free_var parent id >>= fun var ->
-         let _ =
-           Hashtbl.add
-             self.ctx ~key:id ~data:(Anf.Free_var (Queue.length self.free_vars))
-         in
+         let operand = Anf.Free_var (Queue.length self.free_vars) in
+         let _ = Hashtbl.add self.ctx ~key:id ~data:operand in
          Queue.enqueue self.free_vars var;
-         Ok (Anf.Free_var (Queue.length self.free_vars))
+         Ok operand
       | None ->
          Error (Sequence.return (Message.Unreachable "Lower free_var"))
     )
