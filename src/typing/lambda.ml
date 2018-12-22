@@ -1,23 +1,24 @@
 open Base
 
-type t = {
-    ty : Type.t;
-    expr : expr
-  }
+type bindings = (Ident.t, Ident.comparator_witness) Set.t
 
-and expr =
-  | App of t * t
-  | Assign of t * t
-  | Case of t list * Pattern.matrix * (bindings * t) list
+type ('ann, 'a) expr =
+  | App of 'a * 'a
+  | Assign of 'a * 'a
+  | Case of 'a list * 'ann Pattern.matrix * (bindings * 'a) list
   | Constr of int * int
   | Extern_var of Path.t
-  | Lam of Ident.t * t
-  | Let_rec of (Ident.t * t) list * t
-  | Let of Ident.t * t * t
+  | Lam of Ident.t * 'a
+  | Let_rec of (Ident.t * 'a) list * 'a
+  | Let of Ident.t * 'a * 'a
   | Lit of Literal.t
   | Local_var of Ident.t
   | Prim of string
   | Ref
-  | Seq of t * t
+  | Seq of 'a * 'a
 
-and bindings = (Ident.t, Ident.comparator_witness) Set.t
+type 'a t = {
+    ann : 'a;
+    ty : Type.t;
+    expr : ('a, 'a t) expr
+  }

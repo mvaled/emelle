@@ -71,7 +71,9 @@ let package :=
       exports = separated_list(COMMA, LIDENT);
     RPARENS;
     items = list(item);
-      { Ast.{ items = items; exports = exports } }
+      { { Ast.ann = ($symbolstartpos, $endpos)
+        ; items = items
+        ; exports = exports } }
 
 let item :=
   | LET; bindings = separated_list(AND, binding); { Ast.Let bindings }

@@ -371,11 +371,9 @@ let rec infer_pattern checker map ty pat =
 
 (** [infer_expr typechecker term] infers the type of [term], returning a
     result. *)
-let rec infer_term checker =
+let rec infer_term checker Term.{ term; ann } =
   let open Result.Monad_infix in
-  function
-  | Term.Ann{term; _} -> infer_term checker term
-
+  match term with
   | Term.App(f, x) ->
      begin match infer_term checker f, infer_term checker x with
      | (Ok f, Ok x) ->
@@ -385,7 +383,7 @@ let rec infer_term checker =
           unify_types checker f.Lambda.ty (Type.arrow x.Lambda.ty var)
         in
         result >>| fun () ->
-        Lambda.{ ty = var; expr = Lambda.App(f, x) }
+        { Lambda.ann; ty = var; expr = Lambda.App(f, x) }
      | (Error f_err, Error x_err) -> Error (Sequence.append f_err x_err)
      | (err, Ok _) | (Ok _, err) -> err
      end
@@ -397,7 +395,7 @@ let rec infer_term checker =
        lval.Lambda.ty
        (Type.App(Type.Prim Type.Ref, rval.Lambda.ty)) >>| fun () ->
      make_impure checker rval.Lambda.ty;
-     Lambda.{ ty = rval.Lambda.ty; expr = Lambda.Assign(lval, rval) }
+     { Lambda.ann; ty = rval.Lambda.ty; expr = Lambda.Assign(lval, rval) }
 
   | Term.Case(scrutinees, cases) ->
      let out_ty = fresh_tvar checker in
@@ -420,26 +418,30 @@ let rec infer_term checker =
          , (ids, consequent)::branches )
        ) ~init:(Ok (List.length cases - 1, [], [])) cases
      >>| fun (_, matrix, branches) ->
-     { Lambda.ty = out_ty
+     { Lambda.ann
+     ; ty = out_ty
      ; expr = Lambda.Case(scruts, matrix, branches) }
 
   | Term.Constr(adt, idx) ->
      let _, product, out_ty = adt.Type.constrs.(idx) in
      let ty = Type.curry product out_ty in
-     Ok { Lambda.ty = inst checker (Hashtbl.create (module Type.Var)) ty
+     Ok { Lambda.ann
+        ; ty = inst checker (Hashtbl.create (module Type.Var)) ty
         ; expr = Lambda.Constr(idx, List.length product) }
 
   | Term.Extern_var(id, ty) ->
-     Ok Lambda.{ ty = inst checker (Hashtbl.create (module Type.Var)) ty
-               ; expr = Lambda.Extern_var id }
+     Ok { Lambda.ann
+        ; ty = inst checker (Hashtbl.create (module Type.Var)) ty
+        ; expr = Lambda.Extern_var id }
 
   | Term.Lam(id, body) ->
      in_new_lam_level (fun checker ->
          let var = fresh_tvar checker in
          Hashtbl.add_exn checker.env ~key:id ~data:var;
          infer_term checker body >>= fun body ->
-         Ok Lambda.{ ty = Type.arrow var body.Lambda.ty
-                   ; expr = Lambda.Lam(id, body) }
+         Ok { Lambda.ann
+            ; ty = Type.arrow var body.Lambda.ty
+            ; expr = Lambda.Lam(id, body) }
        ) checker
 
   | Term.Let(lhs, rhs, body) ->
@@ -449,7 +451,7 @@ let rec infer_term checker =
      gen checker rhs.Lambda.ty;
      Hashtbl.add_exn checker.env ~key:lhs ~data:rhs.Lambda.ty;
      infer_term checker body >>| fun body ->
-     Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
+     { Lambda.ann; ty = body.Lambda.ty; expr = Lambda.Let(lhs, rhs, body) }
 
   | Term.Let_rec(bindings, body) ->
      infer_rec_bindings checker bindings >>= fun bindings ->
@@ -461,10 +463,11 @@ let rec infer_term checker =
          | None -> ()
        ) bindings;
      infer_term checker body >>| fun body ->
-     Lambda.{ ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
+     { Lambda.ann; ty = body.Lambda.ty; expr = Lambda.Let_rec(bindings, body) }
 
   | Term.Lit lit ->
-     Ok { Lambda.ty =
+     Ok { Lambda.ann
+        ; ty =
             begin match lit with
             | Literal.Char _ -> Type.Prim Type.Char
             | Literal.Float _ -> Type.Prim Type.Float
@@ -475,28 +478,30 @@ let rec infer_term checker =
 
   | Term.Prim(op, ty) ->
      type_of_ast_polytype checker ty >>| fun ty ->
-     { Lambda.ty = inst checker (Hashtbl.create (module Type.Var)) ty
+     { Lambda.ann
+     ; ty = inst checker (Hashtbl.create (module Type.Var)) ty
      ; expr = Lambda.Prim op }
 
   | Term.Ref ->
      in_new_lam_level (fun checker ->
          let var = fresh_tvar checker in
          make_impure checker var;
-         Ok { Lambda.ty =
-                Type.arrow var (Type.App(Type.Prim Type.Ref, var))
+         Ok { Lambda.ann
+            ; ty = Type.arrow var (Type.App(Type.Prim Type.Ref, var))
             ; expr = Lambda.Ref }
        ) checker
 
   | Term.Seq(s, t) ->
      infer_term checker s >>= fun s ->
      infer_term checker t >>| fun t ->
-     Lambda.{ ty = t.Lambda.ty; expr = Lambda.Seq(s, t) }
+     { Lambda.ann; ty = t.Lambda.ty; expr = Lambda.Seq(s, t) }
 
   | Term.Var id ->
      match Hashtbl.find checker.env id with
      | Some ty ->
-        Ok Lambda.{ ty = inst checker (Hashtbl.create (module Type.Var)) ty
-                  ; expr = Lambda.Local_var id }
+        Ok { Lambda.ann
+           ; ty = inst checker (Hashtbl.create (module Type.Var)) ty
+           ; expr = Lambda.Local_var id }
      | None -> Error (Sequence.return (Message.Unreachable "Tc expr var"))
 
 and infer_branch checker scruts pats =

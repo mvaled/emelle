@@ -26,7 +26,7 @@ decision tree is as follows:
 - Find the default matrix.
 - The `Ref` pattern is like a one-argument constructor pattern that cannot fail.
 
-## Matrix specialization:
+## Matrix specialization
 
 Given a matrix and a constructor:
 

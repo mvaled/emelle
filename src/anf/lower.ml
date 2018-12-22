@@ -44,9 +44,14 @@ let rec free_var self id =
          Error (Sequence.return (Message.Unreachable "Lower free_var"))
     )
 
-let make_break self instr =
+let make_break self ann instr =
   let reg = fresh_register self in
-  Anf.Let(reg, instr, Anf.Break (Anf.Register reg))
+  { Anf.ann
+  ; instr =
+      Anf.Let
+        ( reg
+        , instr
+        , { Anf.ann; instr = Anf.Break (Anf.Register reg) } ) }
 
 (** Combine statically known nested unary functions into multi-argument procs *)
 let rec proc_of_lambda self params id body ~cont =
@@ -62,7 +67,7 @@ let rec proc_of_lambda self params id body ~cont =
         instr_of_lambdacode self body ~cont:(fun opcode ->
             cont (Anf.Fun ({ env = Queue.to_list self.free_vars
                            ; params = List.rev (reg::params)
-                           ; body = make_break self opcode }))
+                           ; body = make_break self body.Lambda.ann opcode }))
           )
 
 (** Combine curried one-argument applications into a function call with all the
@@ -107,7 +112,7 @@ and flatten_app self count args f x ~cont =
            let proc =
              { Anf.env = args
              ; params
-             ; body = make_break self (Anf.Box box_contents) }
+             ; body = make_break self f.Lambda.ann (Anf.Box box_contents) }
            in Anf.Fun proc
        )
   | Lambda.Ref ->
@@ -147,9 +152,9 @@ and compile_branch self bindings =
     ) ~init:(Ok []) bindings
 
 (** Convert a [Lambda.t] into an [instr]. *)
-and instr_of_lambdacode self lambda ~cont =
+and instr_of_lambdacode self ({ Lambda.ann; expr; _ } as lambda) ~cont =
   let open Result.Monad_infix in
-  match lambda.Lambda.expr with
+  match expr with
   | Lambda.App(f, x) ->
      operand_of_lambdacode self x ~cont:(fun x ->
          flatten_app self 1 [] f x ~cont
@@ -166,7 +171,7 @@ and instr_of_lambdacode self lambda ~cont =
              acc >>= fun list ->
              compile_branch self bindings >>= fun params ->
              instr_of_lambdacode self body ~cont:(fun opcode ->
-                 Ok (make_break self opcode)
+                 Ok (make_break self ann opcode)
                )
              >>| fun body -> (params, body)::list
            ) ~init:(Ok []) branches
@@ -188,23 +193,23 @@ and instr_of_lambdacode self lambda ~cont =
          | `Duplicate -> Message.unreachable "Lower instr_of_lambdacode"
          | `Ok ->
             instr_of_lambdacode self body ~cont >>| fun body ->
-            Anf.Let(var, rhs, body)
+            { Anf.ann; instr = Anf.Let(var, rhs, body) }
        )
   | Lambda.Let_rec(bindings, body) ->
      compile_letrec self bindings ~cont:(fun bindings ->
          instr_of_lambdacode self body ~cont >>| fun body ->
-         Anf.Let_rec(bindings, body)
+         { Anf.ann; instr = Anf.Let_rec(bindings, body) }
        )
   | Lambda.Prim op -> cont (Prim op)
   | Lambda.Ref ->
      cont (Anf.Fun
              { env = []
              ; params = [0]
-             ; body = make_break self (Anf.Ref (Anf.Register 0)) })
+             ; body = make_break self ann (Anf.Ref (Anf.Register 0)) })
   | Lambda.Seq(s, t) ->
      instr_of_lambdacode self s ~cont:(fun s ->
          instr_of_lambdacode self t ~cont >>| fun t ->
-         Anf.Seq(s, t)
+         { Anf.ann; instr = Seq(s, t) }
        )
 
 (** This function implements the compilation of a let-rec expression, as used in
@@ -243,11 +248,13 @@ and operand_of_lambdacode self lambda ~cont =
      let proc =
        { Anf.env = []
        ; params
-       ; body = make_break self (Anf.Box((Anf.Lit (Literal.Int tag))::vars)) }
+       ; body =
+           make_break self lambda.Lambda.ann
+             (Anf.Box((Anf.Lit (Literal.Int tag))::vars)) }
      in
      let var = fresh_register self in
      cont (Anf.Register var) >>| fun body ->
-     Anf.Let(var, Anf.Fun proc, body)
+     { Anf.ann = lambda.Lambda.ann; instr = Anf.Let(var, Anf.Fun proc, body) }
   | Lambda.Extern_var id -> cont (Anf.Extern_var id)
   | Lambda.Lit lit -> cont (Anf.Lit lit)
   | Lambda.Local_var reg ->
@@ -256,5 +263,5 @@ and operand_of_lambdacode self lambda ~cont =
      instr_of_lambdacode self lambda ~cont:(fun rhs ->
          let var = fresh_register self in
          cont (Anf.Register var) >>| fun body ->
-         Anf.Let(var, rhs, body)
+         { Anf.ann = lambda.Lambda.ann; instr = Anf.Let(var, rhs, body) }
        )

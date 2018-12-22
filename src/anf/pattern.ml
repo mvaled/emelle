@@ -1,25 +1,26 @@
 open Base
 
-type t = {
-    node : pattern;
-    id : Ident.t option
+type 'a t = {
+    ann : 'a;
+    node : 'a pattern;
+    id : Ident.t option;
   }
 
-and pattern =
-  | Con of Type.adt * int * t list (** Constructor pattern *)
-  | Deref of t
-  | Or of t * t
+and 'a pattern =
+  | Con of Type.adt * int * 'a t list (** Constructor pattern *)
+  | Deref of 'a t
+  | Or of 'a t * 'a t
   | Wild (** Wildcard pattern *)
 
-type row = {
-    patterns : t list;
+type 'a row = {
+    patterns : 'a t list;
     bindings : (Ident.t, Anf.operand, Ident.comparator_witness) Map.t;
     (** [bindings] holds a map from idents to already-popped occurrences. *)
     action : int
   }
 
 (** Invariant: All rows in the matrix have the same length *)
-type matrix = row list
+type 'a matrix = 'a row list
 
 type context = {
     reg_gen : Anf.register ref
@@ -35,7 +36,7 @@ let fresh_reg ctx =
 
 (** Read into a row, and returns Some row where the indexed pattern has been
     moved to the front, or None if the index reads out of bounds. *)
-let swap_column_of_row (idx : int) (row : row) =
+let swap_column_of_row (idx : int) (row : 'a row) =
   let rec f idx left = function
     | pivot::right when idx = 0 -> Some (left, pivot, right)
     | x::next -> f (idx - 1) (x::left) next
@@ -95,7 +96,8 @@ let rec specialize constr product occurrence rows =
        | Wild ->
           Some ({ row with
                   patterns =
-                    fill rest_pats { node = Wild; id = None } product
+                    fill rest_pats
+                      { ann = first_pat.ann; node = Wild; id = None } product
                 ; bindings }::rows)
        | Or(p1, p2) ->
           specialize constr product occurrence
@@ -120,7 +122,7 @@ let specialize_ref occurrence rows =
   let helper row rows =
     match row.patterns with
     | [] -> None
-    | { node; id }::rest_pats ->
+    | { node; id; ann }::rest_pats ->
        let bindings =
          match id with
          | None -> row.bindings
@@ -133,7 +135,7 @@ let specialize_ref occurrence rows =
                 ; bindings }::rows)
        | Wild ->
           Some ({ row with
-                  patterns = { node = Wild; id = None }::rest_pats
+                  patterns = { ann; node = Wild; id = None }::rest_pats
                 ; bindings }::rows)
        | _ -> None
   in

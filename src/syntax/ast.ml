@@ -54,5 +54,6 @@ type 'a item =
   | Type of 'a adt * 'a adt list
 
 type 'a file =
-  { exports : string list
+  { ann : 'a
+  ; exports : string list
   ; items : 'a item list }

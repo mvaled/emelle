@@ -135,9 +135,9 @@ and compile_decision_tree ctx instrs cont_idx branches =
      >>| fun else_block_idx ->
      Ssa.Switch(Anf.Register tag_reg, cases, else_block_idx)
 
-and compile_instr ctx =
+and compile_instr ctx anf =
   let open Result.Monad_infix in
-  function
+  match anf.Anf.instr with
   | Anf.Let(reg, op, next) ->
      compile_opcode ctx op ~cont:(fun ctx op ->
          Queue.enqueue ctx.instrs { Ssa.dest = Some reg; opcode = op };

@@ -2,37 +2,16 @@ open Base
 
 type register = int
 
-and operand =
+type operand =
   | Extern_var of Path.t
   | Free_var of int (** In the proc's environment *)
   | Lit of Literal.t
   | Register of int
 
-and opcode =
-  | Assign of operand * operand
-  | Box of operand list
-  | Call of operand * operand * operand list
-    (** proc, first arg, rest args *)
-  | Case of operand list * decision_tree * join_point list
-    (** discrs, decision tree, jump table *)
-  | Fun of proc
-  | Load of operand
-  | Prim of string
-  | Ref of operand
+(** A jump is a branch instruction to a join point with the given arguments *)
+and jump = operand list * int
 
-and instr =
-  | Break of operand
-  | Let of register * opcode * instr
-  | Let_rec of (register * register * opcode) list * instr
-  | Seq of opcode * instr
-
-and proc = {
-    env : operand list; (** The captured variables *)
-    params : register list;
-    body : instr;
-  }
-
-and decision_tree =
+type decision_tree =
   | Deref of operand * register * decision_tree
   | Fail
   | Leaf of jump
@@ -44,8 +23,34 @@ and decision_tree =
     (** A switch holds the scrutinee occurrence and a map from constructors to
         decision trees, and a default decision tree. *)
 
-(** A join point is like a basic block with parameters *)
-and join_point = register list * instr
+type 'a opcode =
+  | Assign of operand * operand
+  | Box of operand list
+  | Call of operand * operand * operand list
+    (** proc, first arg, rest args *)
+  | Case of operand list * decision_tree * 'a join_point list
+    (** discrs, decision tree, jump table *)
+  | Fun of 'a proc
+  | Load of operand
+  | Prim of string
+  | Ref of operand
 
-(** A jump is a branch instruction to a join point with the given arguments *)
-and jump = operand list * int
+(** A join point is like a basic block with parameters *)
+and 'a join_point = register list * 'a instr
+
+and 'a instr' =
+  | Break of operand
+  | Let of register * 'a opcode * 'a instr
+  | Let_rec of (register * register * 'a opcode) list * 'a instr
+  | Seq of 'a opcode * 'a instr
+
+and 'a instr = {
+    instr : 'a instr';
+    ann : 'a;
+  }
+
+and 'a proc = {
+    env : operand list; (** The captured variables *)
+    params : register list;
+    body : 'a instr;
+  }

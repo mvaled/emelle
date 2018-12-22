@@ -1,10 +1,10 @@
 open Base
 
-type command =
+type 'a command =
   | Let of
-      Lambda.t list * Pattern.matrix
+      'a Lambda.t list * 'a Pattern.matrix
       * (Ident.t, Ident.comparator_witness) Set.t
-  | Let_rec of (Ident.t * Lambda.t) list
+  | Let_rec of (Ident.t * 'a Lambda.t) list
 
 type t =
   { elaborator : Elab.t
@@ -22,7 +22,7 @@ let create name packages =
   ; package
   ; packages }
 
-let export self env exports =
+let export self env Ast.{ ann; exports; _ } =
   let open Result.Monad_infix in
   List.fold ~f:(fun acc name ->
       acc >>= fun (i, list) ->
@@ -41,7 +41,7 @@ let export self env exports =
                | None -> Error (Sequence.return (Message.Reexported_name name))
     ) ~init:(Ok (0, [])) exports
   >>| fun (_, operands) ->
-  Lower.make_break self.lowerer (Anf.Box (List.rev operands))
+  Lower.make_break self.lowerer ann (Anf.Box (List.rev operands))
 
 let compile_item self env commands item ~cont =
   let open Result.Monad_infix in
@@ -107,7 +107,7 @@ let compile_item self env commands item ~cont =
        ) ~init:(Ok ()) (adt::adts) >>= fun () ->
      cont env commands
 
-let compile_items self env items exports =
+let compile_package self env (Ast.{ ann; items; _ } as package) =
   let open Result.Monad_infix in
   let rec loop env list = function
     | item::items ->
@@ -122,20 +122,20 @@ let compile_items self env items exports =
                 Lower.compile_branch self.lowerer bindings >>= fun params ->
                 loop2 rest >>| fun body ->
                 Lower.make_break
-                  self.lowerer (Anf.Case(scruts, tree, [params, body]))
+                  self.lowerer ann (Anf.Case(scruts, tree, [params, body]))
               )
          | Let_rec(bindings)::rest ->
             Lower.compile_letrec self.lowerer bindings ~cont:(fun bindings ->
                 loop2 rest >>| fun body ->
-                Anf.Let_rec(bindings, body)
+                { Anf.ann; instr = Anf.Let_rec(bindings, body) }
               )
-         | [] -> export self env exports
+         | [] -> export self env package
        in loop2 (List.rev list)
   in loop env [] items
 
 let compile packages name ast_package =
   let open Result.Monad_infix in
   let st = create name packages in
-  compile_items
-    st (Env.empty (module String)) ast_package.Ast.items ast_package.Ast.exports
+  compile_package
+    st (Env.empty (module String)) ast_package
   >>= Ssa_of_anf.compile_module

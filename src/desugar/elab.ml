@@ -30,7 +30,7 @@ let fresh_ident st name = Ident.fresh st.vargen name
 (** [pattern_of_ast_pattern state map reg ast_pat] converts [ast_pat] from an
     [Ast.pattern] to [Term.ml] while collecting bound identifiers in [map],
     returning [Error] if a data constructor or type isn't defined. *)
-let rec pattern_of_ast_pattern st map id_opt (_, node) =
+let rec pattern_of_ast_pattern st map id_opt (ann, node) =
   let open Result.Monad_infix in
   match node with
   | Ast.Con(constr_path, pats) ->
@@ -43,11 +43,17 @@ let rec pattern_of_ast_pattern st map id_opt (_, node) =
      | None -> Error (Sequence.return (Message.Unresolved_path constr_path))
      | Some (_, (adt, idx)) ->
         List.fold_right ~f:f ~init:(Ok ([], map)) pats >>| fun (pats, map) ->
-        (Pattern.{node = Con(adt, idx, pats); id = id_opt}, map)
+        ( { Pattern.ann
+          ; node = Con(adt, idx, pats)
+          ; id = id_opt }
+        , map)
      end
   | Ast.Deref pat ->
      pattern_of_ast_pattern st map None pat >>| fun (pat, map) ->
-     (Pattern.{node = Deref pat; id = id_opt}, map)
+     ( { Pattern.ann
+       ; node = Deref pat
+       ; id = id_opt }
+     , map)
   | Ast.Var name ->
      let id =
        match id_opt with
@@ -55,14 +61,14 @@ let rec pattern_of_ast_pattern st map id_opt (_, node) =
        | None -> fresh_ident st (Some name)
      in
      begin match Map.add map ~key:name ~data:id with
-     | `Ok map -> Ok (Pattern.{node = Wild; id = Some id}, map)
+     | `Ok map -> Ok ({ Pattern.ann; node = Wild; id = Some id }, map)
      | `Duplicate -> Error (Sequence.return (Message.Redefined_name name))
      end
-  | Ast.Wild -> Ok (Pattern.{node = Wild; id = id_opt}, map)
+  | Ast.Wild -> Ok ({ Pattern.ann; node = Wild; id = id_opt }, map)
 
 (** [term_of_expr desugarer env expr] converts [expr] from an [Ast.expr] to a
     [Term.t]. *)
-let rec term_of_expr st env (ann, node) =
+let rec term_of_expr st env (ann, node) : ('a Term.t, 'b) Result.t =
   let open Result.Monad_infix in
   let term =
     match node with
@@ -136,11 +142,15 @@ let rec term_of_expr st env (ann, node) =
            row::rows
          ) ~init:(Ok []) (case::cases) >>| fun cases ->
        let case_term =
-         Term.Case(List.map ~f:(fun x -> Term.Var x) (id::ids), cases)
+         { Term.ann
+         ; term =
+             let f x = { Term.ann; term = Term.Var x} in
+             Case(List.map ~f (id::ids), cases) }
        in
        List.fold_right ~f:(fun id body ->
-           Term.Lam(id, body)
-         ) ~init:case_term (id::ids)
+           { Term.ann; term = Lam(id, body) }
+         ) ~init:case_term ids
+       |> fun body -> Term.Lam(id, body)
 
     | Ast.Let(bindings, body) ->
        (* Transform
@@ -196,7 +206,7 @@ let rec term_of_expr st env (ann, node) =
           | Some (path, (ty, _)) -> Ok (Term.Extern_var(path, ty))
           | None -> Error (Sequence.return (Message.Unresolved_path qual_id))
 
-  in term >>| fun term -> (Term.Ann { ann = ann; term = term })
+  in term >>| fun term -> { Term.ann = ann; term = term }
 
 and elab_rec_bindings self env bindings =
   let open Result.Monad_infix in
