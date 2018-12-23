@@ -25,3 +25,14 @@ type 'ann t = {
     term : ('ann, 'ann t) term;
     ann : 'ann;
   }
+
+type 'a item =
+  | Top_let of
+      'a t list * (Ident.t, Ident.comparator_witness) Set.t * 'a Pattern.t list
+  | Top_let_rec of 'a t bind_group
+
+type 'a file = {
+    top_ann : 'a;
+    env : (string, Ident.t, String.comparator_witness) Env.t;
+    items : 'a item list;
+  }

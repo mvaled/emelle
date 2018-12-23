@@ -545,3 +545,32 @@ and infer_rec_bindings checker bindings =
         | Error e1, Error e2 -> Error (Sequence.append e1 e2)
       in List.fold_right ~f:f ~init:(Ok []) bindings
     ) checker
+
+let typecheck typechecker term_file =
+  let open Result.Monad_infix in
+  List.fold ~f:(fun acc next ->
+      acc >>= fun list ->
+      match next with
+      | Term.Top_let(scruts, ids, pats) ->
+         List.fold_right ~f:(fun scrut acc ->
+             acc >>= fun list ->
+             in_new_let_level (fun typechecker ->
+                 infer_term typechecker scrut
+               ) typechecker >>| fun expr ->
+             expr::list
+           ) ~init:(Ok []) scruts >>= fun scruts ->
+         infer_branch typechecker scruts pats >>| fun () ->
+         let matrix =
+           [ { Pattern.patterns = pats
+             ; bindings = Map.empty (module Ident)
+             ; action = 0 } ]
+         in
+         (Lambda.Top_let(scruts, ids, matrix))::list
+      | Term.Top_let_rec bindings ->
+         infer_rec_bindings typechecker bindings >>| fun bindings ->
+         (Lambda.Top_let_rec bindings)::list
+    ) ~init:(Ok []) term_file.Term.items
+  >>| fun items ->
+  { Lambda.top_ann = term_file.Term.top_ann
+  ; items = List.rev items
+  ; env = typechecker.env }

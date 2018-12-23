@@ -246,3 +246,56 @@ and elab_let_bindings self env bindings =
         Set.add acc id
       ) ~init:(Set.empty (module Ident)) map
   in (map, scruts, ids, pats)
+
+let elab typechecker env package packages ast_file =
+  let open Result.Monad_infix in
+  let elab = create package packages in
+  List.fold ~f:(fun acc next ->
+      acc >>= fun (env, list) ->
+      match next with
+      | Ast.Let bindings ->
+         elab_let_bindings elab env bindings
+         >>= fun (map, scruts, ids, pats) ->
+         Map.fold ~f:(fun ~key:key ~data:data acc ->
+             acc >>= fun env ->
+             match Env.add env key data with
+             | Some env -> Ok env
+             | None -> Error (Sequence.return (Message.Redefined_name key))
+           ) ~init:(Ok env) map
+         >>| fun env ->
+         (env, (Term.Top_let(scruts, ids, pats))::list)
+      | Ast.Let_rec bindings ->
+         elab_rec_bindings elab env bindings
+         >>| fun (env, bindings) ->
+         (env, (Term.Top_let_rec bindings)::list)
+      | Ast.Type(adt, adts) ->
+         List.fold ~f:(fun acc adt ->
+             acc >>= fun () ->
+             let kvar = Kind.fresh_var typechecker.Typecheck.kvargen in
+             Package.add_typedef
+               package adt.Ast.name (Package.Todo (Kind.Var kvar))
+           ) ~init:(Ok ()) (adt::adts) >>= fun () ->
+         List.fold ~f:(fun acc adt ->
+             acc >>= fun () ->
+             Typecheck.type_adt_of_ast_adt typechecker adt >>= fun adt ->
+             match Package.find_typedef package adt.Type.name with
+             | None ->
+                Error (Sequence.return (Message.Unreachable "Typecheck ADT"))
+             | Some ptr ->
+                match !ptr with
+                | Package.Compiled _ ->
+                   Error (Sequence.return
+                            (Message.Redefined_name adt.Type.name))
+                | Package.Todo kind ->
+                   Typecheck.unify_kinds kind (Type.kind_of_adt adt)
+                   >>= fun () ->
+                   Package.add_constrs package adt >>= fun () ->
+                   ptr := Package.Compiled (Type.Manifest adt);
+                   Ok ()
+           ) ~init:(Ok ()) (adt::adts) >>| fun () ->
+         (env, list)
+    ) ~init:(Ok (env, [])) ast_file.Ast.items
+  >>| fun (env, list) ->
+  { Term.top_ann = ast_file.Ast.ann
+  ; env = env
+  ; items = List.rev list }

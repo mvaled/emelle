@@ -22,3 +22,14 @@ type 'a t = {
     ty : Type.t;
     expr : ('a, 'a t) expr
   }
+
+type 'a item =
+  | Top_let of
+      'a t list * (Ident.t, Ident.comparator_witness) Set.t * 'a Pattern.matrix
+  | Top_let_rec of (Ident.t * 'a t) list
+
+type 'a file = {
+    top_ann : 'a;
+    items : 'a item list;
+    env : (Ident.t, Type.t) Hashtbl.t
+  }
