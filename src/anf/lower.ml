@@ -134,7 +134,7 @@ and compile_case self scruts matrix ~cont =
     | [] ->
        let scruts = List.rev operands in
        Pattern.decision_tree_of_matrix self.pat_ctx scruts matrix
-       >>= fun tree -> cont (scruts, tree)
+       >>= fun tree -> cont tree
   in loop [] scruts
 
 (** Returns a list of parameters (bound variables) of the branch sorted by
@@ -166,7 +166,7 @@ and instr_of_lambdacode self ({ Lambda.ann; expr; _ } as lambda) ~cont =
            )
        )
   | Lambda.Case(scruts, matrix, branches) ->
-     compile_case self scruts matrix ~cont:(fun (scruts, tree) ->
+     compile_case self scruts matrix ~cont:(fun tree ->
          List.fold_right ~f:(fun (bindings, body) acc ->
              acc >>= fun list ->
              compile_branch self bindings >>= fun params ->
@@ -176,7 +176,7 @@ and instr_of_lambdacode self ({ Lambda.ann; expr; _ } as lambda) ~cont =
              >>| fun body -> (params, body)::list
            ) ~init:(Ok []) branches
          >>= fun branches ->
-         cont (Anf.Case(scruts, tree, branches))
+         cont (Anf.Case(tree, branches))
        )
   | Lambda.Constr _ | Lambda.Extern_var _
   | Lambda.Local_var _ | Lambda.Lit _ ->

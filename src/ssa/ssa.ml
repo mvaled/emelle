@@ -1,29 +1,36 @@
 open Base
 
-type label = int
+module Label = struct
+  module T = struct
+    type t =
+      | Entry
+      | Block of int
+    [@@deriving compare, sexp]
+  end
+  include T
+  include Comparator.Make(T)
+end
 
 type operand = Anf.operand
 
 type cont =
-  | Block of label (** A basic block other than the entry *)
-  | Entry (** The entry basic block *)
+  | Break of Label.t (** Break to a basic block *)
   | Fail (** Pattern match failure *)
   | Return (** Return from the function *)
-  | Switch of operand * (int * label) list * label
+  | Switch of operand * (int * Label.t) list * Label.t
       (** The continuation is dynamic *)
 
 type opcode =
   | Assign of operand * operand
   | Box of operand list
   | Box_dummy of int
-  | Break of cont
   | Call of operand * operand * operand list
   | Deref of operand
   | Fun of int * operand list
   | Get of operand * int
   | Load of operand
   | Memcopy of operand * operand
-  | Phi of (label, operand, Int.comparator_witness) Map.t ref
+  | Phi of (Label.t, operand, Label.comparator_witness) Map.t ref
   | Prim of string
   | Ref of operand
 
@@ -33,6 +40,7 @@ type instr = {
   }
 
 type basic_block = {
+    mutable preds : (Label.t, Label.comparator_witness) Set.t;
     instrs : instr Queue.t;
     tail : cont;
   }
@@ -40,7 +48,7 @@ type basic_block = {
 type proc = {
     params : Anf.register list;
     entry : basic_block;
-    blocks : (label, basic_block, Int.comparator_witness) Map.t;
+    blocks : (int, basic_block, Int.comparator_witness) Map.t;
     return : Anf.operand;
   }
 

@@ -132,17 +132,18 @@ let print_operand pp = function
   | Anf.Register id ->
      print_reg pp id
 
-let print_label pp label =
-  Buffer.add_char pp.buffer 'L';
-  Buffer.add_string pp.buffer (Int.to_string label)
+let print_label pp = function
+  | Ssa.Label.Block label ->
+     Buffer.add_char pp.buffer 'L';
+     Buffer.add_string pp.buffer (Int.to_string label)
+  | Ssa.Label.Entry ->
+     Buffer.add_string pp.buffer "entry"
 
 let print_cont pp = function
-  | Ssa.Block label ->
+  | Ssa.Break label ->
      print_label pp label
-  | Ssa.Entry ->
-     Buffer.add_string pp.buffer "entry";
   | Ssa.Fail ->
-     Buffer.add_string pp.buffer "panic";
+     Buffer.add_string pp.buffer "panic"
   | Ssa.Return ->
      Buffer.add_string pp.buffer "ret";
   | Ssa.Switch(scrut, cases, else_label) ->
@@ -175,9 +176,6 @@ let print_opcode pp = function
   | Ssa.Box_dummy size ->
      Buffer.add_string pp.buffer "dummy ";
      Buffer.add_string pp.buffer (Int.to_string size)
-  | Ssa.Break cont ->
-     Buffer.add_string pp.buffer "br ";
-     print_cont pp cont
   | Ssa.Call(f, arg, args) ->
      Buffer.add_string pp.buffer "call ";
      print_operand pp f;
@@ -238,7 +236,13 @@ let print_instr pp Ssa.{ dest; opcode } =
   Buffer.add_string pp.buffer " = ";
   print_opcode pp opcode
 
-let print_bb pp Ssa.{ instrs; tail } =
+let print_bb pp Ssa.{ preds; instrs; tail } =
+  Buffer.add_string pp.buffer "predecessors: ";
+  Set.iter ~f:(fun label ->
+      print_label pp label;
+      Buffer.add_char pp.buffer ';'
+    ) preds;
+  newline pp;
   Queue.iter ~f:(fun instr ->
       print_instr pp instr;
       newline pp
@@ -262,7 +266,7 @@ let print_proc pp Ssa.{ params; entry; blocks; return } =
         );
       newline pp;
       Map.iteri ~f:(fun ~key ~data ->
-          print_label pp key;
+          print_label pp (Ssa.Label.Block key);
           Buffer.add_char pp.buffer ':';
           indent pp (fun pp ->
               newline pp;

@@ -43,12 +43,12 @@ let compile_package self env ast_file =
   let rec loop = function
     | Lambda.Top_let(scruts, bindings, matrix)::rest ->
        Lower.compile_case self.lowerer scruts matrix
-         ~cont:(fun (scruts, tree) ->
+         ~cont:(fun tree ->
            Lower.compile_branch self.lowerer bindings >>= fun params ->
            loop rest >>| fun body ->
            Lower.make_break
              self.lowerer typed_file.Lambda.top_ann
-             (Anf.Case(scruts, tree, [params, body]))
+             (Anf.Case(tree, [params, body]))
          )
     | Lambda.Top_let_rec(bindings)::rest ->
        Lower.compile_letrec self.lowerer bindings ~cont:(fun bindings ->

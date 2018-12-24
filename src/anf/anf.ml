@@ -28,8 +28,8 @@ type 'a opcode =
   | Box of operand list
   | Call of operand * operand * operand list
     (** proc, first arg, rest args *)
-  | Case of operand list * decision_tree * 'a join_point list
-    (** discrs, decision tree, jump table *)
+  | Case of decision_tree * 'a join_point list
+    (** decision tree, jump table *)
   | Fun of 'a proc
   | Load of operand
   | Prim of string
