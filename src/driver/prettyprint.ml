@@ -212,15 +212,9 @@ let print_opcode pp = function
      print_operand pp dest;
      Buffer.add_char pp.buffer ' ';
      print_operand pp src
-  | Ssa.Phi map ->
-     Buffer.add_string pp.buffer "phi [";
-     Map.iteri ~f:(fun ~key:label ~data:operand ->
-         print_label pp label;
-         Buffer.add_char pp.buffer ' ';
-         print_operand pp operand;
-         Buffer.add_char pp.buffer ';'
-       ) !map;
-     Buffer.add_char pp.buffer ']'
+  | Ssa.Phi idx ->
+     Buffer.add_string pp.buffer "phi ";
+     Buffer.add_string pp.buffer (Int.to_string idx);
   | Ssa.Prim str ->
      Buffer.add_string pp.buffer "prim ";
      Buffer.add_string pp.buffer (String.escaped str)
@@ -238,10 +232,18 @@ let print_instr pp Ssa.{ dest; opcode } =
 
 let print_bb pp Ssa.{ preds; instrs; tail } =
   Buffer.add_string pp.buffer "predecessors: ";
-  Set.iter ~f:(fun label ->
-      print_label pp label;
-      Buffer.add_char pp.buffer ';'
-    ) preds;
+  indent pp (fun pp ->
+      Map.iteri ~f:(fun ~key:label ~data:cases ->
+          newline pp;
+          print_label pp label;
+          Buffer.add_string pp.buffer " -> [";
+          List.iter ~f:(fun operand ->
+              print_operand pp operand;
+              Buffer.add_char pp.buffer ';';
+            ) cases;
+          Buffer.add_char pp.buffer ']'
+        ) preds;
+    );
   newline pp;
   Queue.iter ~f:(fun instr ->
       print_instr pp instr;

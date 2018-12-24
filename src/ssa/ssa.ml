@@ -30,7 +30,7 @@ type opcode =
   | Get of operand * int
   | Load of operand
   | Memcopy of operand * operand
-  | Phi of (Label.t, operand, Label.comparator_witness) Map.t ref
+  | Phi of int
   | Prim of string
   | Ref of operand
 
@@ -40,7 +40,7 @@ type instr = {
   }
 
 type basic_block = {
-    mutable preds : (Label.t, Label.comparator_witness) Set.t;
+    mutable preds : (Label.t, operand list, Label.comparator_witness) Map.t;
     instrs : instr Queue.t;
     tail : cont;
   }
