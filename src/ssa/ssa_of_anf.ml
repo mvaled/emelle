@@ -14,6 +14,14 @@ type t = {
     cont : Ssa.cont;
   }
 
+(** Helper record for organizational purposes *)
+type branch = {
+    branch_idx : int;
+    label : Ssa.Label.t;
+    exit_phi_elem : Ssa.operand;
+    block : Ssa.basic_block;
+  }
+
 (** [fresh_block ctx ~cont] applies [cont] to the index of the next basic block,
     [cont] returns a tuple consisting of a result, the block predecessors, the
     instruction queue, and the block successor. The entire function returns
@@ -35,7 +43,7 @@ let rec compile_decision_tree ctx instrs origin_label cont_idx branches =
      compile_decision_tree ctx instrs origin_label cont_idx branches tree
   | Anf.Fail -> Ok Ssa.Fail
   | Anf.Leaf(operands, idx) ->
-     let branch_idx, _, block = branches.(idx) in
+     let { branch_idx; block; _ } = branches.(idx) in
      block.Ssa.preds <-
        Map.set block.Ssa.preds
          ~key:(Ssa.Label.Block cont_idx) ~data:(Array.of_list operands);
@@ -98,7 +106,7 @@ let rec compile_opcode ctx anf ~cont
                ~f:(fun (reg_args, instr) acc ->
                  let%bind list = acc in
                  (* The basic block for the join point *)
-                 let%map (branch_idx, exit_phi_elem), block =
+                 let%map (branch_idx, label, exit_phi_elem), block =
                    fresh_block ctx ~cont:(fun branch_idx ->
                        let branch_instrs = Queue.create () in
                        List.iteri reg_args ~f:(fun i reg_arg ->
@@ -106,27 +114,27 @@ let rec compile_opcode ctx anf ~cont
                              { Ssa.dest = Some reg_arg
                              ; opcode = Phi i };
                          );
-                       let%map _, tail, exit_phi_elem =
+                       let%map label, tail, exit_phi_elem =
                          compile_instr
                            { ctx with
                              instrs = branch_instrs
                            ; curr_block = Ssa.Label.Block branch_idx
                            ; cont = Ssa.Break (Ssa.Label.Block cont_idx) }
                            instr in
-                       ( (branch_idx, exit_phi_elem)
+                       ( (branch_idx, label, exit_phi_elem)
                        , Map.empty (module Ssa.Label)
                        , branch_instrs
                        , tail )
                      )
-                 in (branch_idx, exit_phi_elem, block)::list
+                 in { branch_idx; label; exit_phi_elem; block }::list
                ) in
            let%bind cont_from_decision_tree =
              compile_decision_tree ctx ctx.instrs ctx.curr_block cont_idx
                (Array.of_list branches) tree in
            let preds =
              List.fold branches ~init:(Map.empty (module Ssa.Label))
-               ~f:(fun acc (idx, exit_phi_elem, _) ->
-                 Map.set acc ~key:(Ssa.Label.Block idx) ~data:[|exit_phi_elem|]
+               ~f:(fun acc { label; exit_phi_elem; _ } ->
+                 Map.set acc ~key:label ~data:[|exit_phi_elem|]
                ) in
            (* Label of continuation block, tail of continuation block *)
            let%map (label, tail, result) =
