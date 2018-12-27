@@ -40,7 +40,7 @@ type instr = {
   }
 
 type basic_block = {
-    mutable preds : (Label.t, operand list, Label.comparator_witness) Map.t;
+    mutable preds : (Label.t, operand array, Label.comparator_witness) Map.t;
     instrs : instr Queue.t;
     tail : cont;
   }
@@ -49,6 +49,7 @@ type proc = {
     params : Anf.register list;
     entry : basic_block;
     blocks : (int, basic_block, Int.comparator_witness) Map.t;
+    before_return : Label.t;
     return : Anf.operand;
   }
 

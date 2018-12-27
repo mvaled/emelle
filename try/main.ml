@@ -28,7 +28,7 @@ let () =
               with
               | Ok modul ->
                  Caml.print_endline "OK!";
-                 Prettyprint.print_module pp modul;
+                 Prettyprint.Ssa.print_module pp modul;
                  set_console_text (Prettyprint.to_string pp)
               | Error errs ->
                  Caml.print_endline "ERROR!";
