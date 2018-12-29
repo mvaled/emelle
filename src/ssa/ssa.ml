@@ -13,12 +13,12 @@ end
 
 type operand = Anf.operand
 
-type cont =
+type jump =
   | Break of Label.t (** Break to a basic block *)
   | Fail (** Pattern match failure *)
   | Return (** Return from the function *)
   | Switch of operand * (int * Label.t) list * Label.t
-      (** The continuation is dynamic *)
+      (** The jump is dynamic *)
 
 type opcode =
   | Assign of operand * operand
@@ -42,7 +42,7 @@ type instr = {
 type basic_block = {
     mutable preds : (Label.t, operand array, Label.comparator_witness) Map.t;
     instrs : instr Queue.t;
-    tail : cont;
+    jump : jump;
   }
 
 type proc = {

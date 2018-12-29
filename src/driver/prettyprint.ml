@@ -140,7 +140,7 @@ module Ssa = struct
     | Ssa.Label.Entry ->
        Buffer.add_string pp.buffer "entry"
 
-  let print_cont pp = function
+  let print_jump pp = function
     | Ssa.Break label ->
        print_label pp label
     | Ssa.Fail ->
@@ -231,7 +231,7 @@ module Ssa = struct
     Buffer.add_string pp.buffer " = ";
     print_opcode pp opcode
 
-  let print_bb pp Ssa.{ preds; instrs; tail } =
+  let print_bb pp Ssa.{ preds; instrs; jump } =
     Buffer.add_string pp.buffer "predecessors: ";
     indent pp (fun pp ->
         Map.iteri ~f:(fun ~key:label ~data:cases ->
@@ -251,7 +251,7 @@ module Ssa = struct
         newline pp
       ) instrs;
     Buffer.add_string pp.buffer "break ";
-    print_cont pp tail
+    print_jump pp jump
 
   let print_proc pp Ssa.{ params; entry; blocks; before_return; return } =
     Buffer.add_char pp.buffer '(';
