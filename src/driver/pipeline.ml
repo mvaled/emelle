@@ -65,3 +65,6 @@ let compile packages name ast_package =
   compile_package
     st (Env.empty (module String)) ast_package
   >>= Ssa_of_anf.compile_module
+  >>= fun package ->
+  Prealloc.prealloc_package package
+  >>| fun () -> package

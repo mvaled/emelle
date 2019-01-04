@@ -253,7 +253,7 @@ module Ssa = struct
     Buffer.add_string pp.buffer "break ";
     print_jump pp jump
 
-  let print_proc pp Ssa.{ params; entry; blocks; before_return; return } =
+  let print_proc pp Ssa.{ params; entry; blocks; before_return; return; _ } =
     Buffer.add_char pp.buffer '(';
     List.iter ~f:(fun param ->
         print_reg pp param;

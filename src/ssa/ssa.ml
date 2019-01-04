@@ -51,6 +51,7 @@ type proc = {
     blocks : (int, basic_block, Int.comparator_witness) Map.t;
     before_return : Label.t;
     return : Anf.operand;
+    interf_graph : Interf.t;
   }
 
 type package = {

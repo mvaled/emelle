@@ -35,18 +35,17 @@ let fresh_block ctx ~cont =
   ctx.blocks := Map.set !(ctx.blocks) ~key:idx ~data:block;
   (ret, block)
 
-let rec compile_decision_tree ctx instrs origin_label this_idx branches =
+let rec compile_decision_tree ctx instrs this_label branches =
   let open Result.Let_syntax in
   function
   | Anf.Deref(occ, dest, tree) ->
      Queue.enqueue instrs { Ssa.dest = Some dest; opcode = Deref occ };
-     compile_decision_tree ctx instrs origin_label this_idx branches tree
+     compile_decision_tree ctx instrs this_label branches tree
   | Anf.Fail -> Ok Ssa.Fail
   | Anf.Leaf(operands, idx) ->
      let { branch_idx; block; _ } = branches.(idx) in
      block.Ssa.preds <-
-       Map.set block.Ssa.preds
-         ~key:(Ssa.Label.Block this_idx) ~data:(Array.of_list operands);
+       Map.set block.Ssa.preds ~key:this_label ~data:(Array.of_list operands);
      Ok (Ssa.Break (Ssa.Label.Block branch_idx))
   | Anf.Switch(tag_reg, occ, trees, else_tree) ->
      Queue.enqueue instrs { Ssa.dest = Some tag_reg; opcode = Get(occ, 0) };
@@ -64,10 +63,10 @@ let rec compile_decision_tree ctx instrs origin_label this_idx branches =
                          { Ssa.dest = Some reg; opcode = Get(occ, idx + 1) }
                      ) regs;
                    compile_decision_tree ctx case_instrs
-                     (Ssa.Label.Block case_idx) case_idx branches tree
+                     (Ssa.Label.Block case_idx) branches tree
                  in
                  ( (case, Ssa.Label.Block case_idx)::list
-                 , Map.singleton (module Ssa.Label) origin_label [||]
+                 , Map.singleton (module Ssa.Label) this_label [||]
                  , case_instrs
                  , jump )
                end
@@ -78,10 +77,10 @@ let rec compile_decision_tree ctx instrs origin_label this_idx branches =
          let else_instrs = Queue.create () in
          let%map jump =
            compile_decision_tree ctx else_instrs
-             (Ssa.Label.Block else_idx) else_idx branches else_tree
+             (Ssa.Label.Block else_idx) branches else_tree
          in
          ( else_idx
-         , Map.singleton (module Ssa.Label) origin_label [||]
+         , Map.singleton (module Ssa.Label) this_label [||]
          , else_instrs
          , jump )
        )
@@ -128,7 +127,7 @@ let rec compile_opcode ctx anf ~cont
                  in { branch_idx; label; exit_phi_elem; block }::list
                ) in
            let%bind jump_from_decision_tree =
-             compile_decision_tree ctx ctx.instrs ctx.curr_block confl_idx
+             compile_decision_tree ctx ctx.instrs ctx.curr_block
                (Array.of_list branches) tree in
            let preds =
              List.fold branches ~init:(Map.empty (module Ssa.Label))
@@ -223,7 +222,8 @@ and compile_proc ctx proc =
   ; blocks = !blocks
   ; entry = { preds = Map.empty (module Ssa.Label); instrs; jump }
   ; before_return
-  ; return }
+  ; return
+  ; interf_graph = Interf.create () }
 
 let compile_module anf =
   let open Result.Let_syntax in
@@ -244,6 +244,7 @@ let compile_module anf =
         ; instrs = ctx.instrs
         ; jump }
     ; before_return
-    ; return } in
+    ; return
+    ; interf_graph = Interf.create () } in
   { Ssa.procs = !(ctx.procs)
   ; main = main_proc }
