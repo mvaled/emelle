@@ -225,7 +225,7 @@ and compile_proc ctx proc =
   ; return
   ; interf_graph = Interf.create () }
 
-let compile_module anf =
+let compile_package anf =
   let open Result.Let_syntax in
   let ctx =
     { procs = ref (Map.empty (module Int))

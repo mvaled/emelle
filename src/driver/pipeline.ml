@@ -64,7 +64,7 @@ let compile packages name ast_package =
   let st = create name packages in
   compile_package
     st (Env.empty (module String)) ast_package
-  >>= Ssa_of_anf.compile_module
+  >>= Ssa_of_anf.compile_package
   >>= fun package ->
-  Prealloc.prealloc_package package
+  Liveness.handle_package package
   >>| fun () -> package

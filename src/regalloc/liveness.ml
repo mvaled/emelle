@@ -57,7 +57,7 @@ let handle_instrs ctx instrs =
        f ctx (i - 1)
   in f ctx (Queue.length instrs)
 
-let prealloc_proc
+let handle_proc
       { Ssa.blocks
       ; entry
       ; before_return
@@ -95,10 +95,10 @@ let prealloc_proc
       | None -> Message.unreachable "Unknown label"
   in handle_block ctx before_return >>| fun _ -> ()
 
-let prealloc_package { Ssa.procs; main } =
+let handle_package { Ssa.procs; main } =
   let open Result.Monad_infix in
   Map.fold procs ~init:(Ok ()) ~f:(fun ~key:_ ~data:proc acc ->
       acc >>= fun () ->
-      prealloc_proc proc
+      handle_proc proc
     ) >>= fun () ->
-  prealloc_proc main;
+  handle_proc main;
