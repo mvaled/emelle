@@ -6,7 +6,8 @@ open Base
 
 type t = {
     procs : (int, Ssa.proc, Int.comparator_witness) Map.t ref;
-    blocks : (int, Ssa.basic_block, Int.comparator_witness) Map.t ref;
+    blocks :
+      (Ssa.Label.t, Ssa.basic_block, Ssa.Label.comparator_witness) Map.t ref;
     label_gen : int ref;
     proc_gen : int ref;
     instrs : Ssa.instr Queue.t;
@@ -31,7 +32,7 @@ let fresh_block ctx ~cont =
   let idx = !(ctx.label_gen) in
   ctx.label_gen := idx + 1;
   let%map ret, preds, instrs, jump = cont idx in
-  let block = { Ssa.instrs; preds; jump } in
+  let block = { Ssa.instrs; preds; jump; visited = false } in
   ctx.blocks := Map.set !(ctx.blocks) ~key:idx ~data:block;
   (ret, block)
 
@@ -46,7 +47,7 @@ let rec compile_decision_tree ctx instrs this_label branches =
      let { branch_idx; block; _ } = branches.(idx) in
      block.Ssa.preds <-
        Map.set block.Ssa.preds ~key:this_label ~data:(Array.of_list operands);
-     Ok (Ssa.Break (Ssa.Label.Block branch_idx))
+     Ok (Ssa.Break branch_idx)
   | Anf.Switch(tag_reg, occ, trees, else_tree) ->
      Queue.enqueue instrs { Ssa.dest = Some tag_reg; opcode = Get(occ, 0) };
      let%bind cases =
@@ -62,10 +63,9 @@ let rec compile_decision_tree ctx instrs this_label branches =
                        Queue.enqueue case_instrs
                          { Ssa.dest = Some reg; opcode = Get(occ, idx + 1) }
                      ) regs;
-                   compile_decision_tree ctx case_instrs
-                     (Ssa.Label.Block case_idx) branches tree
+                   compile_decision_tree ctx case_instrs case_idx branches tree
                  in
-                 ( (case, Ssa.Label.Block case_idx)::list
+                 ( (case, case_idx)::list
                  , Map.singleton (module Ssa.Label) this_label [||]
                  , case_instrs
                  , jump )
@@ -76,15 +76,14 @@ let rec compile_decision_tree ctx instrs this_label branches =
        fresh_block ctx ~cont:(fun else_idx ->
          let else_instrs = Queue.create () in
          let%map jump =
-           compile_decision_tree ctx else_instrs
-             (Ssa.Label.Block else_idx) branches else_tree
+           compile_decision_tree ctx else_instrs else_idx branches else_tree
          in
          ( else_idx
          , Map.singleton (module Ssa.Label) this_label [||]
          , else_instrs
          , jump )
        )
-     in Ssa.Switch(Anf.Register tag_reg, cases, Ssa.Label.Block else_block_idx)
+     in Ssa.Switch(Anf.Register tag_reg, cases, else_block_idx)
 
 let rec compile_opcode ctx anf ~cont
         : ( Ssa.Label.t * Ssa.jump * Ssa.operand
@@ -116,8 +115,8 @@ let rec compile_opcode ctx anf ~cont
                          compile_instr
                            { ctx with
                              instrs = branch_instrs
-                           ; curr_block = Ssa.Label.Block branch_idx
-                           ; jump = Ssa.Break (Ssa.Label.Block confl_idx) }
+                           ; curr_block = branch_idx
+                           ; jump = Ssa.Break confl_idx }
                            instr in
                        ( (branch_idx, label, exit_phi_elem)
                        , Map.empty (module Ssa.Label)
@@ -140,7 +139,7 @@ let rec compile_opcode ctx anf ~cont
              cont
                { ctx with
                  instrs = confl_instrs
-               ; curr_block = Ssa.Label.Block confl_idx }
+               ; curr_block = confl_idx }
                (Ssa.Phi 0) in
            (* Label, jump for origin block, jump for confluent block *)
            ( (label, jump_from_decision_tree, result)
@@ -208,43 +207,48 @@ and compile_instr ctx anf
 
 and compile_proc ctx proc =
   let open Result.Let_syntax in
-  let blocks = ref (Map.empty (module Int)) in
+  let blocks = ref (Map.empty (module Ssa.Label)) in
   let instrs = Queue.create () in
   let state =
     { ctx with
       blocks
     ; instrs
-    ; label_gen = ref 0
-    ; curr_block = Ssa.Label.Entry
+    ; label_gen = ref 1
+    ; curr_block = 0
     ; jump = Ssa.Return } in
   let%map before_return, jump, return = compile_instr state proc.Anf.body in
+  let entry_block =
+    { Ssa.preds = Map.empty (module Ssa.Label)
+    ; instrs
+    ; jump
+    ; visited = false } in
   { Ssa.params = proc.Anf.params
-  ; blocks = !blocks
-  ; entry = { preds = Map.empty (module Ssa.Label); instrs; jump }
+  ; blocks = Map.set !blocks ~key:0 ~data:entry_block
+  ; entry = 0
   ; before_return
-  ; return
-  ; interf_graph = Interf.create () }
+  ; return }
 
 let compile_package anf =
   let open Result.Let_syntax in
   let ctx =
     { procs = ref (Map.empty (module Int))
-    ; blocks = ref (Map.empty (module Int))
+    ; blocks = ref (Map.empty (module Ssa.Label))
     ; instrs = Queue.create ()
     ; proc_gen = ref 0
-    ; label_gen = ref 0
-    ; curr_block = Ssa.Label.Entry
+    ; label_gen = ref 1
+    ; curr_block = 0
     ; jump = Ssa.Return } in
   let%map before_return, jump, return = compile_instr ctx anf in
+  let entry_block =
+    { Ssa.preds = Map.empty (module Ssa.Label)
+    ; instrs = ctx.instrs
+    ; jump
+    ; visited = false } in
   let main_proc =
     { Ssa.params = []
-    ; blocks = !(ctx.blocks)
-    ; entry =
-        { preds = Map.empty (module Ssa.Label)
-        ; instrs = ctx.instrs
-        ; jump }
+    ; blocks = Map.set !(ctx.blocks) ~key:0 ~data:entry_block
+    ; entry = 0
     ; before_return
-    ; return
-    ; interf_graph = Interf.create () } in
+    ; return } in
   { Ssa.procs = !(ctx.procs)
   ; main = main_proc }

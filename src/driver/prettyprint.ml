@@ -133,12 +133,9 @@ module Ssa = struct
     | Anf.Register id ->
        print_reg pp id
 
-  let print_label pp = function
-    | Ssa.Label.Block label ->
-       Buffer.add_char pp.buffer 'L';
-       Buffer.add_string pp.buffer (Int.to_string label)
-    | Ssa.Label.Entry ->
-       Buffer.add_string pp.buffer "entry"
+  let print_label pp label =
+    Buffer.add_char pp.buffer 'L';
+    Buffer.add_string pp.buffer (Int.to_string label)
 
   let print_jump pp = function
     | Ssa.Break label ->
@@ -223,7 +220,7 @@ module Ssa = struct
        Buffer.add_string pp.buffer "ref ";
        print_operand pp op
 
-  let print_instr pp Ssa.{ dest; opcode } =
+  let print_instr pp Ssa.{ dest; opcode; _ } =
     begin match dest with
     | Some reg -> print_reg pp reg
     | None -> Buffer.add_char pp.buffer '_'
@@ -231,7 +228,7 @@ module Ssa = struct
     Buffer.add_string pp.buffer " = ";
     print_opcode pp opcode
 
-  let print_bb pp Ssa.{ preds; instrs; jump } =
+  let print_bb pp Ssa.{ preds; instrs; jump; _ } =
     Buffer.add_string pp.buffer "predecessors: ";
     indent pp (fun pp ->
         Map.iteri ~f:(fun ~key:label ~data:cases ->
@@ -253,7 +250,7 @@ module Ssa = struct
     Buffer.add_string pp.buffer "break ";
     print_jump pp jump
 
-  let print_proc pp Ssa.{ params; entry; blocks; before_return; return; _ } =
+  let print_proc pp Ssa.{ params; blocks; before_return; return; _ } =
     Buffer.add_char pp.buffer '(';
     List.iter ~f:(fun param ->
         print_reg pp param;
@@ -262,14 +259,8 @@ module Ssa = struct
     Buffer.add_char pp.buffer ')';
     indent pp (fun pp ->
         newline pp;
-        Buffer.add_string pp.buffer "entry:";
-        indent pp (fun pp ->
-            newline pp;
-            print_bb pp entry
-          );
-        newline pp;
         Map.iteri ~f:(fun ~key ~data ->
-            print_label pp (Ssa.Label.Block key);
+            print_label pp key;
             Buffer.add_char pp.buffer ':';
             indent pp (fun pp ->
                 newline pp;

@@ -2,10 +2,8 @@ open Base
 
 module Label = struct
   module T = struct
-    type t =
-      | Entry
-      | Block of int
-    [@@deriving compare, sexp]
+    type t = int
+    [@@deriving compare, hash, sexp]
   end
   include T
   include Comparator.Make(T)
@@ -43,18 +41,25 @@ type basic_block = {
     mutable preds : (Label.t, operand array, Label.comparator_witness) Map.t;
     instrs : instr Queue.t;
     jump : jump;
+    mutable visited : bool;
   }
 
 type proc = {
     params : Anf.register list;
-    entry : basic_block;
-    blocks : (int, basic_block, Int.comparator_witness) Map.t;
+    entry : Label.t;
+    blocks : (Label.t, basic_block, Label.comparator_witness) Map.t;
     before_return : Label.t;
     return : Anf.operand;
-    interf_graph : Interf.t;
   }
 
 type package = {
     procs : (int, proc, Int.comparator_witness) Map.t;
     main : proc
   }
+
+let successors = function
+  | Break label -> [label]
+  | Return -> []
+  | Fail -> []
+  | Switch(_, cases, else_case) ->
+     else_case::(List.map ~f:(fun (_, label) -> label) cases)
