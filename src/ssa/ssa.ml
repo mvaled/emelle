@@ -41,7 +41,6 @@ type basic_block = {
     mutable preds : (Label.t, operand array, Label.comparator_witness) Map.t;
     instrs : instr Queue.t;
     jump : jump;
-    mutable visited : bool;
   }
 
 type proc = {

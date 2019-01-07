@@ -32,7 +32,7 @@ let fresh_block ctx ~cont =
   let idx = !(ctx.label_gen) in
   ctx.label_gen := idx + 1;
   let%map ret, preds, instrs, jump = cont idx in
-  let block = { Ssa.instrs; preds; jump; visited = false } in
+  let block = { Ssa.instrs; preds; jump } in
   ctx.blocks := Map.set !(ctx.blocks) ~key:idx ~data:block;
   (ret, block)
 
@@ -220,8 +220,7 @@ and compile_proc ctx proc =
   let entry_block =
     { Ssa.preds = Map.empty (module Ssa.Label)
     ; instrs
-    ; jump
-    ; visited = false } in
+    ; jump } in
   { Ssa.params = proc.Anf.params
   ; blocks = Map.set !blocks ~key:0 ~data:entry_block
   ; entry = 0
@@ -242,8 +241,7 @@ let compile_package anf =
   let entry_block =
     { Ssa.preds = Map.empty (module Ssa.Label)
     ; instrs = ctx.instrs
-    ; jump
-    ; visited = false } in
+    ; jump } in
   let main_proc =
     { Ssa.params = []
     ; blocks = Map.set !(ctx.blocks) ~key:0 ~data:entry_block

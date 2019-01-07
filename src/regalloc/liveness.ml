@@ -1,11 +1,5 @@
 open Base
 
-type color = int
-
-type t = {
-    live_regs : (int, Int.comparator_witness) Set.t;
-  }
-
 let operands_of_opcode = function
   | Ssa.Assign(lval, rval) -> [lval; rval]
   | Ssa.Box list -> list
@@ -38,14 +32,14 @@ let reg_of_jump jump =
   | Anf.Register reg -> Some reg
   | _ -> None
 
-let handle_regs ctx regs =
+let handle_regs live_regs regs =
   let regs = Set.of_list (module Int) regs in
-  let new_regs = Set.diff regs ctx.live_regs in
-  (Set.union ctx.live_regs regs, new_regs)
+  let new_regs = Set.diff regs live_regs in
+  (Set.union live_regs regs, new_regs)
 
-let handle_instr ctx instr =
+let handle_instr live_regs instr =
   let (live_regs, ending_regs) =
-    handle_regs ctx (regs_of_opcode instr.Ssa.opcode) in
+    handle_regs live_regs (regs_of_opcode instr.Ssa.opcode) in
   let live_regs =
     match instr.Ssa.dest with
     | None -> live_regs
@@ -53,65 +47,41 @@ let handle_instr ctx instr =
   ( { Post_ssa.dest = instr.Ssa.dest
     ; opcode = instr.Ssa.opcode
     ; ending_regs }
-  , { live_regs } )
+  , live_regs )
 
-(** [handle_instrs ctx instrs] iterates over [instrs] backwards and calls
-    [handle_instr ctx instr] for each instruction. *)
-let handle_instrs ctx instrs =
-  let rec go ctx list = function
-    | 0 -> list, ctx
+(** [handle_instrs live_regs instrs] iterates over [instrs] backwards and calls
+    [handle_instr live_regs instr] for each instruction. *)
+let handle_instrs live_regs instrs =
+  let rec go live_regs list = function
+    | 0 -> list, live_regs
     | i ->
-       let instr, ctx = handle_instr ctx (Queue.get instrs (i - 1)) in
-       go ctx (instr::list) (i - 1)
-  in go ctx [] (Queue.length instrs)
+       let instr, live_regs = handle_instr live_regs (Queue.get instrs (i - 1))
+       in go live_regs (instr::list) (i - 1)
+  in go live_regs [] (Queue.length instrs)
 
-let handle_phi_elems ctx elems =
+let handle_phi_elems live_regs elems =
   let regs =
     Array.fold elems ~init:[] ~f:(fun acc operand ->
         match operand with
         | Anf.Register reg -> reg::acc
         | _ -> acc
       )
-  in handle_regs ctx regs
+  in handle_regs live_regs regs
 
 let find_block proc idx = Map.find proc.Ssa.blocks idx
 
-let rec handle_block ctx blocks proc label =
-  let open Result.Let_syntax in
+let rec handle_block live_regs blocks proc label =
+  let open Result.Monad_infix in
   match find_block proc label with
   | Some block ->
-     if block.Ssa.visited then Message.unreachable ""
-     else (
-       block.Ssa.visited <- true;
-       let instrs, ctx = handle_instrs ctx block.Ssa.instrs in
-       let block' = { Post_ssa.instrs; jump = block.Ssa.jump } in
-       let blocks = Map.set blocks ~key:label ~data:block' in
-       Map.fold block.Ssa.preds ~init:(Ok blocks)
-         ~f:(fun ~key:label ~data:elems acc ->
-           let%bind blocks = acc in
-           let live_regs, _ = handle_phi_elems ctx elems in
-           let ctx = { live_regs } in
-           let%bind block =
-             match Map.find proc.Ssa.blocks label with
-             | None -> Message.unreachable "Unknown block"
-             | Some block -> Ok block in
-           let succs = Ssa.successors block.Ssa.jump in
-           let%bind visited_all_succs =
-             List.fold succs ~init:(Ok true) ~f:(fun acc label ->
-                 acc >>= fun visited_all_succs ->
-                 if visited_all_succs then
-                   match find_block proc label with
-                   | Some { Ssa.visited; _ } -> Ok visited
-                   | None -> Message.unreachable "Unknown block"
-                 else Ok false
-               ) in
-           (* Only visit predecessor block if all of its successors have been
-              visited *)
-           if visited_all_succs then
-             handle_block ctx blocks proc label
-           else Ok blocks
-         )
-     )
+     let succs = Ssa.successors block.Ssa.jump in
+     List.fold succs ~init:(Ok (blocks, live_regs)) ~f:(fun acc label ->
+         acc >>= fun (blocks, live_regs) ->
+         handle_block live_regs blocks proc label
+       ) >>| fun (blocks, live_regs) ->
+     let instrs, live_regs = handle_instrs live_regs block.Ssa.instrs in
+     let block' = { Post_ssa.instrs; jump = block.Ssa.jump } in
+     (Map.set blocks ~key:label ~data:block', live_regs)
   | None -> Message.unreachable "Unknown label"
 
 let handle_proc proc =
@@ -121,10 +91,9 @@ let handle_proc proc =
     | Anf.Register reg ->
        Set.singleton (module Int) reg
     | _ -> Set.empty (module Int) in
-  let ctx = { live_regs } in
   let map = Map.empty (module Int) in
-  handle_block ctx map proc proc.Ssa.before_return
-  >>| fun blocks ->
+  handle_block live_regs map proc proc.Ssa.entry
+  >>| fun (blocks, _) ->
   { Post_ssa.params = proc.Ssa.params
   ; entry = proc.Ssa.entry
   ; blocks = blocks
