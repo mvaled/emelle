@@ -67,4 +67,6 @@ let compile packages name ast_package =
   >>= Ssa_of_anf.compile_package
   >>= fun package ->
   Liveness.handle_package package
+  >>= fun package' ->
+  Color.handle_package package'
   >>| fun _ -> package

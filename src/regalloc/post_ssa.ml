@@ -7,6 +7,8 @@ type instr = {
   }
 
 type basic_block = {
+    preds :
+      (Ssa.Label.t, Ssa.operand array, Ssa.Label.comparator_witness) Map.t;
     instrs : instr list;
     jump : Ssa.jump;
   }
