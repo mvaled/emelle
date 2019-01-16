@@ -87,19 +87,14 @@ let rec handle_block live_regs blocks proc label =
 
 let handle_proc proc =
   let open Result.Monad_infix in
-  let live_regs =
-    match proc.Ssa.return with
-    | Anf.Register reg ->
-       Set.singleton (module Int) reg
-    | _ -> Set.empty (module Int) in
+  let live_regs = Set.empty (module Int) in
   let map = Map.empty (module Int) in
   handle_block live_regs map proc proc.Ssa.entry
   >>| fun (blocks, _) ->
   { Post_ssa.params = proc.Ssa.params
   ; entry = proc.Ssa.entry
   ; blocks = blocks
-  ; before_return = proc.Ssa.before_return
-  ; return = proc.Ssa.return }
+  ; before_return = proc.Ssa.before_return }
 
 let handle_package { Ssa.procs; main } =
   let open Result.Monad_infix in

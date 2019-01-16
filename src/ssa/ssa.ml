@@ -11,11 +11,15 @@ end
 
 type operand = Anf.operand
 
+type jump_dest =
+  | Label of Label.t
+  | Return
+
 type jump =
-  | Break of Label.t (** Break to a basic block *)
+  | Break of jump_dest * operand list (** Break to a basic block *)
   | Fail (** Pattern match failure *)
-  | Return (** Return from the function *)
-  | Switch of operand * (int * Label.t) list * Label.t
+  | Switch of
+      operand * (int * Label.t) list * Label.t
       (** The jump is dynamic *)
 
 type opcode =
@@ -38,7 +42,7 @@ type instr = {
   }
 
 type basic_block = {
-    mutable preds : (Label.t, operand array, Label.comparator_witness) Map.t;
+    mutable preds : (Label.t, Label.comparator_witness) Set.t;
     instrs : instr Queue.t;
     jump : jump;
   }
@@ -48,7 +52,6 @@ type proc = {
     entry : Label.t;
     blocks : (Label.t, basic_block, Label.comparator_witness) Map.t;
     before_return : Label.t;
-    return : Anf.operand;
   }
 
 type package = {
@@ -57,8 +60,8 @@ type package = {
   }
 
 let successors = function
-  | Break label -> [label]
-  | Return -> []
+  | Break(Label label, _) -> [label]
+  | Break(Return, _) -> []
   | Fail -> []
   | Switch(_, cases, else_case) ->
      else_case::(List.map ~f:(fun (_, label) -> label) cases)

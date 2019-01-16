@@ -117,6 +117,14 @@ let print_qual_id pp (package, name) =
   Buffer.add_char pp.buffer '.';
   Buffer.add_string pp.buffer name
 
+let rec print_comma_sep f pp = function
+  | [] -> ()
+  | [x] -> f pp x
+  | x::xs ->
+     f pp x;
+     Buffer.add_string pp.buffer ", ";
+     print_comma_sep f pp xs
+
 module Ssa = struct
   let print_reg pp reg =
     Buffer.add_string pp.buffer "r%";
@@ -138,22 +146,25 @@ module Ssa = struct
     Buffer.add_string pp.buffer (Int.to_string label)
 
   let print_jump pp = function
-    | Ssa.Break label ->
-       print_label pp label
+    | Ssa.Break(dest, args) ->
+       begin match dest with
+       | Ssa.Return -> Buffer.add_string pp.buffer "return"
+       | Ssa.Label label -> print_label pp label
+       end;
+       Buffer.add_char pp.buffer '(';
+       print_comma_sep print_operand pp args;
+       Buffer.add_char pp.buffer ')'
     | Ssa.Fail ->
        Buffer.add_string pp.buffer "panic"
-    | Ssa.Return ->
-       Buffer.add_string pp.buffer "ret";
     | Ssa.Switch(scrut, cases, else_label) ->
        Buffer.add_string pp.buffer "switch ";
        print_operand pp scrut;
        Buffer.add_string pp.buffer " [";
-       List.iter ~f:(fun (case, conseq) ->
+       print_comma_sep (fun pp (case, conseq) ->
            Buffer.add_string pp.buffer (Int.to_string case);
            Buffer.add_string pp.buffer " -> ";
-           print_label pp conseq;
-           Buffer.add_string pp.buffer "; "
-         ) cases;
+           print_label pp conseq
+         ) pp cases;
        Buffer.add_string pp.buffer "] ";
        print_label pp else_label
 
@@ -230,32 +241,17 @@ module Ssa = struct
 
   let print_bb pp Ssa.{ preds; instrs; jump; _ } =
     Buffer.add_string pp.buffer "predecessors: ";
-    indent pp (fun pp ->
-        Map.iteri ~f:(fun ~key:label ~data:cases ->
-            newline pp;
-            print_label pp label;
-            Buffer.add_string pp.buffer " -> [";
-            Array.iter ~f:(fun operand ->
-                print_operand pp operand;
-                Buffer.add_char pp.buffer ';';
-              ) cases;
-            Buffer.add_char pp.buffer ']'
-          ) preds;
-      );
+    print_comma_sep print_label pp (Set.to_list preds);
     newline pp;
     Queue.iter ~f:(fun instr ->
         print_instr pp instr;
         newline pp
       ) instrs;
-    Buffer.add_string pp.buffer "break ";
     print_jump pp jump
 
-  let print_proc pp Ssa.{ params; blocks; before_return; return; _ } =
+  let print_proc pp Ssa.{ params; blocks; before_return; _ } =
     Buffer.add_char pp.buffer '(';
-    List.iter ~f:(fun param ->
-        print_reg pp param;
-        Buffer.add_string pp.buffer "; "
-      ) params;
+    print_comma_sep print_reg pp params;
     Buffer.add_char pp.buffer ')';
     indent pp (fun pp ->
         newline pp;
@@ -270,16 +266,13 @@ module Ssa = struct
           ) blocks;
         Buffer.add_string pp.buffer "before return: ";
         print_label pp before_return;
-        newline pp;
-        Buffer.add_string pp.buffer "return value: ";
-        print_operand pp return
-      )
+      );
+    newline pp
 
   let print_module pp Ssa.{ procs; main } =
     Map.iteri ~f:(fun ~key ~data ->
         print_procname pp key;
         print_proc pp data;
-        newline pp;
         newline pp
       ) procs;
     Buffer.add_string pp.buffer "main";

@@ -55,10 +55,10 @@ let rec handle_block ctx proc label =
      (* next_color is either the greatest color of all the predecessor blocks
         or None if not all predecessors have been visited *)
      let opt =
-       Map.fold block.Post_ssa.preds
+       Set.fold block.Post_ssa.preds
          ~init:(Some (ctx.free_colors, ctx.color_gen))
-         ~f:(fun ~key:label ~data:_ ->
-           Option.bind
+         ~f:(fun opt label ->
+           Option.bind opt
              ~f:(fun (free_colors, next_color) ->
                Option.map (Hashtbl.find ctx.visited_blocks label)
                  ~f:(fun block_data ->

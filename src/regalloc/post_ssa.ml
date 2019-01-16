@@ -7,8 +7,7 @@ type instr = {
   }
 
 type basic_block = {
-    preds :
-      (Ssa.Label.t, Ssa.operand array, Ssa.Label.comparator_witness) Map.t;
+    preds : (Ssa.Label.t, Ssa.Label.comparator_witness) Set.t;
     instrs : instr list;
     jump : Ssa.jump;
   }
@@ -18,7 +17,6 @@ type proc = {
     entry : Ssa.Label.t;
     blocks : (int, basic_block, Int.comparator_witness) Map.t;
     before_return : Ssa.Label.t;
-    return : Anf.operand;
   }
 
 type package = {
