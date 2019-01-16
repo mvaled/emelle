@@ -146,16 +146,16 @@ module Ssa = struct
     Buffer.add_string pp.buffer (Int.to_string label)
 
   let print_jump pp = function
-    | Ssa.Break(dest, args) ->
-       begin match dest with
-       | Ssa.Return -> Buffer.add_string pp.buffer "return"
-       | Ssa.Label label -> print_label pp label
-       end;
+    | Ssa.Break(label, args) ->
+       print_label pp label;
        Buffer.add_char pp.buffer '(';
        print_comma_sep print_operand pp args;
        Buffer.add_char pp.buffer ')'
     | Ssa.Fail ->
        Buffer.add_string pp.buffer "panic"
+    | Ssa.Return operand ->
+       Buffer.add_string pp.buffer "return ";
+       print_operand pp operand
     | Ssa.Switch(scrut, cases, else_label) ->
        Buffer.add_string pp.buffer "switch ";
        print_operand pp scrut;

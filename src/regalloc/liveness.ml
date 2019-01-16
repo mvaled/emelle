@@ -14,9 +14,11 @@ let operands_of_opcode = function
   | Ssa.Prim _ -> []
   | Ssa.Ref op -> [op]
 
-let operand_of_jump = function
-  | Ssa.Switch(scrut, _, _) -> Some scrut
-  | _ -> None
+let operands_of_jump = function
+  | Ssa.Break(_, args) -> args
+  | Ssa.Fail -> []
+  | Ssa.Return operand -> [operand]
+  | Ssa.Switch(scrut, _, _) -> [scrut]
 
 let regs_of_opcode opcode =
   let operands = operands_of_opcode opcode in
@@ -26,11 +28,11 @@ let regs_of_opcode opcode =
       | _ -> acc
     )
 
-let reg_of_jump jump =
-  let open Option.Monad_infix in
-  operand_of_jump jump >>= function
-  | Anf.Register reg -> Some reg
-  | _ -> None
+let regs_of_jump jump =
+  let open List.Monad_infix in
+  operands_of_jump jump >>= function
+  | Anf.Register reg -> [reg]
+  | _ -> []
 
 let handle_regs live_regs regs =
   let regs = Set.of_list (module Int) regs in
@@ -59,15 +61,6 @@ let handle_instrs live_regs instrs =
        in go live_regs (instr::list) (i - 1)
   in go live_regs [] (Queue.length instrs)
 
-let handle_phi_elems live_regs elems =
-  let regs =
-    Array.fold elems ~init:[] ~f:(fun acc operand ->
-        match operand with
-        | Anf.Register reg -> reg::acc
-        | _ -> acc
-      )
-  in handle_regs live_regs regs
-
 let find_block proc idx = Map.find proc.Ssa.blocks idx
 
 let rec handle_block live_regs blocks proc label =
@@ -79,6 +72,9 @@ let rec handle_block live_regs blocks proc label =
          acc >>= fun (blocks, live_regs) ->
          handle_block live_regs blocks proc label
        ) >>| fun (blocks, live_regs) ->
+     let live_at_jump =
+       Set.of_list (module Int) (regs_of_jump block.Ssa.jump) in
+     let live_regs = Set.union live_regs live_at_jump in
      let instrs, live_regs = handle_instrs live_regs block.Ssa.instrs in
      let block' =
        { Post_ssa.preds = block.Ssa.preds; instrs; jump = block.Ssa.jump } in

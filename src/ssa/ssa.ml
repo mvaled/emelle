@@ -11,15 +11,11 @@ end
 
 type operand = Anf.operand
 
-type jump_dest =
-  | Label of Label.t
-  | Return
-
 type jump =
-  | Break of jump_dest * operand list (** Break to a basic block *)
+  | Break of Label.t * operand list (** Break to a basic block *)
   | Fail (** Pattern match failure *)
-  | Switch of
-      operand * (int * Label.t) list * Label.t
+  | Return of operand
+  | Switch of operand * (int * Label.t) list * Label.t
       (** The jump is dynamic *)
 
 type opcode =
@@ -60,8 +56,8 @@ type package = {
   }
 
 let successors = function
-  | Break(Label label, _) -> [label]
-  | Break(Return, _) -> []
+  | Break(label, _) -> [label]
+  | Return _ -> []
   | Fail -> []
   | Switch(_, cases, else_case) ->
      else_case::(List.map ~f:(fun (_, label) -> label) cases)

@@ -4,6 +4,10 @@
 
 open Base
 
+type jump_dest =
+  | Label of Ssa.Label.t
+  | Return
+
 type t = {
     procs : (int, Ssa.proc, Int.comparator_witness) Map.t ref;
     blocks :
@@ -12,7 +16,7 @@ type t = {
     proc_gen : int ref;
     instrs : Ssa.instr Queue.t;
     curr_block : Ssa.Label.t;
-    jump_dest : Ssa.jump_dest;
+    jump_dest : jump_dest;
   }
 
 (** Helper record for organizational purposes *)
@@ -45,7 +49,7 @@ let rec compile_decision_tree ctx instrs this_label branches =
   | Anf.Leaf(operands, idx) ->
      let { branch_idx; block; _ } = branches.(idx) in
      block.Ssa.preds <- Set.add block.Ssa.preds this_label;
-     Ok (Ssa.Break(Ssa.Label branch_idx, operands))
+     Ok (Ssa.Break(branch_idx, operands))
   | Anf.Switch(tag_reg, occ, trees, else_tree) ->
      Queue.enqueue instrs { Ssa.dest = Some tag_reg; opcode = Get(occ, 0) };
      let%bind cases =
@@ -112,7 +116,7 @@ let rec compile_opcode ctx anf ~cont
                            { ctx with
                              instrs = branch_instrs
                            ; curr_block = branch_idx
-                           ; jump_dest = Ssa.Label confl_idx }
+                           ; jump_dest = Label confl_idx }
                            instr in
                        ( (branch_idx, label)
                        , Set.empty (module Ssa.Label)
@@ -194,7 +198,10 @@ and compile_instr ctx anf
          compile_instr ctx next
        )
   | Anf.Break operand ->
-     Ok (ctx.curr_block, Ssa.Break(ctx.jump_dest, [operand]))
+     Ok ( ctx.curr_block
+        , match ctx.jump_dest with
+          | Label label -> Ssa.Break(label, [operand])
+          | Return -> Ssa.Return operand )
 
 and compile_proc ctx proc =
   let open Result.Let_syntax in
@@ -206,7 +213,7 @@ and compile_proc ctx proc =
     ; instrs
     ; label_gen = ref 1
     ; curr_block = 0
-    ; jump_dest = Ssa.Return } in
+    ; jump_dest = Return } in
   let%map before_return, jump = compile_instr state proc.Anf.body in
   let entry_block =
     { Ssa.preds = Set.empty (module Ssa.Label)
@@ -226,7 +233,7 @@ let compile_package anf =
     ; proc_gen = ref 0
     ; label_gen = ref 1
     ; curr_block = 0
-    ; jump_dest = Ssa.Return } in
+    ; jump_dest = Return } in
   let%map before_return, jump = compile_instr ctx anf in
   let entry_block =
     { Ssa.preds = Set.empty (module Ssa.Label)
