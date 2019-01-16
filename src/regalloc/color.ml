@@ -1,27 +1,26 @@
 open Base
 
 type t = {
-    color_gen : int ref;
-      (* Is a reference so that multiple states can share it *)
-    coloring : (int, int) Hashtbl.t;
-    mutable free_colors : int list;
+    mutable color_gen : int; (** The color to use if there are no free colors *)
+    coloring : (int, int) Hashtbl.t; (** Map from registers to colors *)
+    mutable free_colors : (int, Int.comparator_witness) Set.t;
+      (** The colors that may be reused *)
     live_regs : (int, int) Hashtbl.t;
-    visited_blocks :
-      (Ssa.Label.t, (int, int) Hashtbl.t) Hashtbl.t;
+    visited_blocks : (Ssa.Label.t, t) Hashtbl.t;
   }
 
 let fresh_color ctx =
-  match ctx.free_colors with
-  | [] ->
-     let c = !(ctx.color_gen) in
-     ctx.color_gen := c + 1;
+  match Set.nth ctx.free_colors 0 with
+  | None ->
+     let c = ctx.color_gen in
+     ctx.color_gen <- c + 1;
      c
-  | color::colors ->
-     ctx.free_colors <- colors;
+  | Some color ->
+     ctx.free_colors <- Set.remove_index ctx.free_colors 0;
      color
 
 let recycle_color ctx color =
-  ctx.free_colors <- color::ctx.free_colors
+  ctx.free_colors <- Set.add ctx.free_colors color
 
 let alloc_reg ctx reg =
   let color = fresh_color ctx in
@@ -53,45 +52,56 @@ let rec handle_block ctx proc label =
   match Map.find proc.Post_ssa.blocks label with
   | None -> Message.unreachable "Unknown block"
   | Some block ->
-     match Hashtbl.add ctx.visited_blocks ~key:label ~data:ctx.live_regs with
-     | `Duplicate -> Ok ()
-     | `Ok ->
-        let visited_all_preds =
-          Map.fold block.Post_ssa.preds ~init:true
-            ~f:(fun ~key:label ~data:_ acc ->
-              acc && (
-                  match Hashtbl.find ctx.visited_blocks label with
-                  | None -> false
-                  | Some tbl ->
-                     let f ~key:_ a _ = Hashtbl.Set_to a in
-                     Hashtbl.merge_into ~src:tbl ~dst:ctx.live_regs ~f;
-                     true
-                )
-            ) in
-        if visited_all_preds then
-          (* free_colors is a mutable field; here, we make it get mutated
-             separately for each successor block *)
-          handle_instrs ctx block.Post_ssa.instrs
-          >>= fun () ->
-          let succs = Ssa.successors block.Post_ssa.jump in
-          List.fold succs ~init:(Ok ()) ~f:(fun acc label ->
-              let live_regs = Hashtbl.create (module Int) in
-              let ctx' = { ctx with free_colors = ctx.free_colors; live_regs }
-              in
-              acc >>= fun () ->
-              handle_block ctx' proc label
-            )
-        else Ok ()
+     (* next_color is either the greatest color of all the predecessor blocks
+        or None if not all predecessors have been visited *)
+     let opt =
+       Map.fold block.Post_ssa.preds
+         ~init:(Some (ctx.free_colors, ctx.color_gen))
+         ~f:(fun ~key:label ~data:_ ->
+           Option.bind
+             ~f:(fun (free_colors, next_color) ->
+               Option.map (Hashtbl.find ctx.visited_blocks label)
+                 ~f:(fun block_data ->
+                   let f ~key:_ a _ = Hashtbl.Set_to a in
+                   Hashtbl.merge_into
+                     ~src:block_data.live_regs ~dst:ctx.live_regs ~f;
+                   ( Set.union free_colors block_data.free_colors
+                   , if block_data.color_gen > next_color then
+                       block_data.color_gen
+                     else
+                       next_color )
+                 )
+             )
+         ) in
+     match opt with
+     | None -> Ok () (* Not all predecessors have been visited, return *)
+     | Some (free_colors, color_gen) ->
+        let ctx = { ctx with color_gen; free_colors } in
+        match Hashtbl.add ctx.visited_blocks ~key:label ~data:ctx with
+        | `Duplicate -> Ok ()
+        | `Ok ->
+           handle_instrs ctx block.Post_ssa.instrs
+           >>= fun () ->
+           let succs = Ssa.successors block.Post_ssa.jump in
+           List.fold succs ~init:(Ok ()) ~f:(fun acc label ->
+               (* Use a physically distinct state *)
+               let ctx = { ctx with live_regs = Hashtbl.create (module Int) } in
+               acc >>= fun () ->
+               handle_block ctx proc label
+             )
 
 let handle_proc proc =
   let open Result.Monad_infix in
   let ctx =
-    { color_gen = ref 0
+    { color_gen = 0
     ; coloring = Hashtbl.create (module Int)
-    ; free_colors = []
+    ; free_colors = Set.empty (module Int)
     ; live_regs = Hashtbl.create (module Int)
     ; visited_blocks = Hashtbl.create (module Int) } in
+  (* Perform register allocation on parameters first *)
   List.iter proc.Post_ssa.params ~f:(fun reg -> alloc_reg ctx reg);
+  (* Perform register allocation on entry block; blocks that are unreachable
+     will not be visited. *)
   handle_block ctx proc proc.Post_ssa.entry >>| fun () ->
   ctx.coloring
 
