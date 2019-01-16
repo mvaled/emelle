@@ -27,15 +27,19 @@ let alloc_reg ctx reg =
   Hashtbl.set ctx.coloring ~key:reg ~data:color;
   Hashtbl.set ctx.live_regs ~key:reg ~data:color
 
-let handle_instr ctx instr =
+let handle_ending_regs ctx regs =
   let open Result.Monad_infix in
-  Set.fold instr.Post_ssa.ending_regs ~init:(Ok ()) ~f:(fun acc reg ->
+  Set.fold regs ~init:(Ok ()) ~f:(fun acc reg ->
       acc >>= fun () ->
       match Hashtbl.find_and_remove ctx.live_regs reg with
       | None ->
          Message.unreachable ("Color unknown register " ^ (Int.to_string reg))
       | Some color -> Ok (recycle_color ctx color)
-    ) >>| fun () ->
+    )
+
+let handle_instr ctx instr =
+  let open Result.Monad_infix in
+  handle_ending_regs ctx instr.Post_ssa.ending_regs >>| fun () ->
   match instr.Post_ssa.dest with
   | None -> ()
   | Some reg -> alloc_reg ctx reg
@@ -80,8 +84,8 @@ let rec handle_block ctx proc label =
         match Hashtbl.add ctx.visited_blocks ~key:label ~data:ctx with
         | `Duplicate -> Ok ()
         | `Ok ->
-           handle_instrs ctx block.Post_ssa.instrs
-           >>= fun () ->
+           handle_instrs ctx block.Post_ssa.instrs >>= fun () ->
+           handle_ending_regs ctx block.Post_ssa.ending_at_jump >>= fun () ->
            let succs = Ssa.successors block.Post_ssa.jump in
            List.fold succs ~init:(Ok ()) ~f:(fun acc label ->
                (* Use a physically distinct state *)

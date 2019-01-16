@@ -74,10 +74,14 @@ let rec handle_block live_regs blocks proc label =
        ) >>| fun (blocks, live_regs) ->
      let live_at_jump =
        Set.of_list (module Int) (regs_of_jump block.Ssa.jump) in
-     let live_regs = Set.union live_regs live_at_jump in
+     let ending_at_jump = Set.diff live_at_jump live_regs in
+     let live_regs = Set.union live_regs ending_at_jump in
      let instrs, live_regs = handle_instrs live_regs block.Ssa.instrs in
      let block' =
-       { Post_ssa.preds = block.Ssa.preds; instrs; jump = block.Ssa.jump } in
+       { Post_ssa.preds = block.Ssa.preds
+       ; instrs
+       ; jump = block.Ssa.jump
+       ; ending_at_jump } in
      (Map.set blocks ~key:label ~data:block', live_regs)
   | None -> Message.unreachable "Unknown label"
 

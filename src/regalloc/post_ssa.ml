@@ -10,6 +10,7 @@ type basic_block = {
     preds : (Ssa.Label.t, Ssa.Label.comparator_witness) Set.t;
     instrs : instr list;
     jump : Ssa.jump;
+    ending_at_jump : (int, Int.comparator_witness) Set.t;
   }
 
 type proc = {
